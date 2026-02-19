@@ -1,5 +1,8 @@
 # grafana-data-source-schemas
 
+> [!CAUTION]
+> This repository is experimental and in progress. Do not use this module.
+
 A wrapper for Grafana data sources that adds support for requesting **schemas** (full schema, tables, columns, and column values) via resource calls.
 
 ## Behaviour
