@@ -59,6 +59,9 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 	}
 
 	resp, err := ds.SchemaHandler.Schema(ctx, tableReq)
+	if err != nil {
+		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
+	}
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
