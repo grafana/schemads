@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 )
 
 // SchemaDatasource wraps a Grafana data source to add support for schema requests
@@ -28,10 +27,6 @@ func NewSchemaDatasource(schemaHandler SchemaHandler, next backend.CallResourceH
 		SchemaHandler:       schemaHandler,
 		CallResourceHandler: next,
 	}
-}
-
-func (ds *SchemaDatasource) NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	return ds, nil
 }
 
 func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
