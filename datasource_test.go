@@ -62,7 +62,7 @@ func TestCallResource_schema_not_implemented(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{"type":"full"}`),
+		Body: []byte(`{"type":"fullSchema"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 501, get().Status)
@@ -86,7 +86,7 @@ func TestCallResource_schema_full(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{"type":"full"}`),
+		Body: []byte(`{"type":"fullSchema"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 200, get().Status)
@@ -166,7 +166,7 @@ func TestCallResource_schema_handler_error(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{"type":"full"}`),
+		Body: []byte(`{"type":"fullSchema"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 500, get().Status)
@@ -182,7 +182,7 @@ func TestCallResource_schema_handler_nil_response(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{"type":"full"}`),
+		Body: []byte(`{"type":"fullSchema"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 200, get().Status)
@@ -264,7 +264,7 @@ func TestCallResource_schema_propagates_headers(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{"type":"full"}`),
+		Body: []byte(`{"type":"fullSchema"}`),
 		Headers: map[string][]string{
 			"Authorization": {"Bearer tok"},
 			"X-Custom":      {"val1", "val2"},

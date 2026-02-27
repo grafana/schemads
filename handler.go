@@ -58,7 +58,6 @@ func (h *providerHandler) Schema(ctx context.Context, req *SchemaRequest) (*Sche
 		}
 		return &SchemaResponse{ColumnValues: vals}, nil
 	case RequestTypeFullSchema:
-	default:
 		schema, err := h.provider.FullSchema(ctx)
 		if err != nil {
 			return nil, err

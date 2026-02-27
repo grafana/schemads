@@ -149,12 +149,12 @@ resp, err := schemas.FetchSchema(ctx, httpClient, schemaURL, &schemas.SchemaRequ
 }
 ```
 
-| `type`       | Constant                | Description                 | Required fields |
-| ------------ | ----------------------- | --------------------------- | --------------- |
-| `"full"`     | `RequestTypeFullSchema` | Full schema                 | None            |
-| `"tables"`   | `RequestTypeTables`     | List of table names         | None            |
-| `"columns"`  | `RequestTypeColumns`    | Columns for specific tables | `tables`        |
-| `"values"`   | `RequestTypeValues`     | Values for specific columns | `columns`       |
+| `type`         | Constant                | Description                 | Required fields |
+| -------------- | ----------------------- | --------------------------- | --------------- |
+| `"fullSchema"` | `RequestTypeFullSchema` | Full schema                 | None            |
+| `"tables"`     | `RequestTypeTables`     | List of table names         | None            |
+| `"columns"`    | `RequestTypeColumns`    | Columns for specific tables | `tables`        |
+| `"values"`     | `RequestTypeValues`     | Values for specific columns | `columns`       |
 
 ### Response body
 

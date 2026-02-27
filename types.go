@@ -26,7 +26,7 @@ func (f *schemaHandlerFunc) Schema(ctx context.Context, req *SchemaRequest) (*Sc
 type RequestType = string
 
 const (
-	RequestTypeFullSchema RequestType = "full"
+	RequestTypeFullSchema RequestType = "fullSchema"
 	RequestTypeTables     RequestType = "tables"
 	RequestTypeColumns    RequestType = "columns"
 	RequestTypeValues     RequestType = "values"

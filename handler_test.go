@@ -82,7 +82,7 @@ func TestNewSchemaHandlerFromProvider(t *testing.T) {
 		require.Equal(t, []string{"active", "inactive"}, resp.ColumnValues["status"])
 	})
 
-	t.Run("unrecognized type routes to FullSchema via default", func(t *testing.T) {
+	t.Run("unrecognized type errors", func(t *testing.T) {
 		want := &Schema{
 			Tables: []Table{{Name: "orders", Columns: []Column{{Name: "id", Type: ColumnTypeInt64}}}},
 		}
@@ -91,9 +91,8 @@ func TestNewSchemaHandlerFromProvider(t *testing.T) {
 		}
 
 		h := NewSchemaHandlerFromProvider(p)
-		resp, err := h.Schema(context.Background(), &SchemaRequest{Type: "unknown"})
-		require.NoError(t, err)
-		require.Equal(t, *want, resp.FullSchema)
+		_, err := h.Schema(context.Background(), &SchemaRequest{Type: "unknown"})
+		require.ErrorContains(t, err, "invalid request type: unknown")
 	})
 
 	t.Run("propagates error from Tables", func(t *testing.T) {
@@ -134,27 +133,5 @@ func TestNewSchemaHandlerFromProvider(t *testing.T) {
 			Columns: []ColumnValuesRequest{{Table: "t1"}},
 		})
 		require.EqualError(t, err, "values boom")
-	})
-
-	t.Run("propagates error from FullSchema via default", func(t *testing.T) {
-		p := &mockProvider{
-			fullSchema: func(_ context.Context) (*Schema, error) { return nil, fmt.Errorf("full schema boom") },
-		}
-
-		h := NewSchemaHandlerFromProvider(p)
-		_, err := h.Schema(context.Background(), &SchemaRequest{Type: "unhandled"})
-		require.EqualError(t, err, "full schema boom")
-	})
-
-	t.Run("nil schema from FullSchema via default returns empty response", func(t *testing.T) {
-		p := &mockProvider{
-			fullSchema: func(_ context.Context) (*Schema, error) { return nil, nil },
-		}
-
-		h := NewSchemaHandlerFromProvider(p)
-		resp, err := h.Schema(context.Background(), &SchemaRequest{Type: "unhandled"})
-		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.Empty(t, resp.FullSchema.Tables)
 	})
 }
