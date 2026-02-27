@@ -3,6 +3,7 @@ package schemas
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -54,7 +55,7 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 	if err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, "invalid request: "+err.Error())
 	}
-	if err := ValidateRequest(tableReq); err != nil {
+	if err := validateRequest(tableReq); err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, err.Error())
 	}
 
@@ -73,4 +74,22 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		},
 		Body: data,
 	})
+}
+
+func validateRequest(req *SchemaRequest) error {
+	if req == nil {
+		return fmt.Errorf("schema request must not be nil")
+	}
+	if req.Type != "" && req.Type != "tables" && req.Type != "columns" && req.Type != "values" {
+		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values")
+	}
+	if req.Type == "columns" && len(req.Tables) == 0 {
+		return fmt.Errorf("tables must be specified when requesting columns")
+	}
+	if req.Type == "values" {
+		if len(req.Columns) == 0 {
+			return fmt.Errorf("columns must be specified when requesting values")
+		}
+	}
+	return nil
 }
