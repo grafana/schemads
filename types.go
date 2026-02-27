@@ -21,9 +21,6 @@ type schemaHandlerFunc struct {
 }
 
 func (f *schemaHandlerFunc) Schema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error) {
-	if err := ValidateRequest(req); err != nil {
-		return nil, err
-	}
 	return f.fn(ctx, req)
 }
 
