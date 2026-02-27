@@ -62,7 +62,7 @@ func TestCallResource_schema_not_implemented(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte("{}"),
+		Body: []byte(`{"type":"full"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 501, get().Status)
@@ -73,7 +73,7 @@ func TestCallResource_schema_full(t *testing.T) {
 	want := &SchemaResponse{
 		FullSchema: Schema{
 			Tables: []Table{{Name: "users", Columns: []Column{
-				{Name: "id", Type: ColumnTypeNumber},
+				{Name: "id", Type: ColumnTypeInt64},
 				{Name: "name", Type: ColumnTypeString},
 			}}},
 		},
@@ -86,7 +86,7 @@ func TestCallResource_schema_full(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{}`),
+		Body: []byte(`{"type":"full"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 200, get().Status)
@@ -122,7 +122,7 @@ func TestCallResource_schema_columns(t *testing.T) {
 		require.Equal(t, []string{"users"}, req.Tables)
 		return &SchemaResponse{
 			Columns: map[string][]Column{
-				"users": {{Name: "id", Type: ColumnTypeNumber}},
+				"users": {{Name: "id", Type: ColumnTypeInt64}},
 			},
 		}, nil
 	})
@@ -142,7 +142,7 @@ func TestCallResource_schema_columns(t *testing.T) {
 	require.Len(t, resp.Columns["users"], 1)
 }
 
-func TestCallResource_schema_empty_body(t *testing.T) {
+func TestCallResource_schema_empty_body_rejects_missing_type(t *testing.T) {
 	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
 		return &SchemaResponse{Tables: []string{"default"}}, nil
 	})
@@ -153,7 +153,8 @@ func TestCallResource_schema_empty_body(t *testing.T) {
 		Path: SchemaResourcePath,
 	}, sender)
 	require.NoError(t, err)
-	require.Equal(t, 200, get().Status)
+	require.Equal(t, 400, get().Status)
+	require.Contains(t, decodeErrorBody(t, get().Body), "invalid table information request type")
 }
 
 func TestCallResource_schema_handler_error(t *testing.T) {
@@ -165,7 +166,7 @@ func TestCallResource_schema_handler_error(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{}`),
+		Body: []byte(`{"type":"full"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 500, get().Status)
@@ -181,7 +182,7 @@ func TestCallResource_schema_handler_nil_response(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{}`),
+		Body: []byte(`{"type":"full"}`),
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 200, get().Status)
@@ -263,7 +264,7 @@ func TestCallResource_schema_propagates_headers(t *testing.T) {
 	sender, get := newTestSender()
 	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
 		Path: SchemaResourcePath,
-		Body: []byte(`{}`),
+		Body: []byte(`{"type":"full"}`),
 		Headers: map[string][]string{
 			"Authorization": {"Bearer tok"},
 			"X-Custom":      {"val1", "val2"},
@@ -287,20 +288,25 @@ func TestValidateRequest(t *testing.T) {
 			wantErr: "must not be nil",
 		},
 		{
-			name: "empty type allowed",
-			req:  &SchemaRequest{Type: ""},
+			name:    "empty type rejected",
+			req:     &SchemaRequest{Type: ""},
+			wantErr: "invalid table information request type",
+		},
+		{
+			name: "full type allowed",
+			req:  &SchemaRequest{Type: RequestTypeFullSchema},
 		},
 		{
 			name: "tables type allowed",
-			req:  &SchemaRequest{Type: "tables"},
+			req:  &SchemaRequest{Type: RequestTypeTables},
 		},
 		{
 			name: "columns with tables",
-			req:  &SchemaRequest{Type: "columns", Tables: []string{"t1"}},
+			req:  &SchemaRequest{Type: RequestTypeColumns, Tables: []string{"t1"}},
 		},
 		{
 			name: "values with columns",
-			req: &SchemaRequest{Type: "values", Columns: []ColumnsInformationRequest{
+			req: &SchemaRequest{Type: RequestTypeValues, Columns: []ColumnValuesRequest{
 				{Table: "t1"},
 			}},
 		},
@@ -311,12 +317,12 @@ func TestValidateRequest(t *testing.T) {
 		},
 		{
 			name:    "columns without tables",
-			req:     &SchemaRequest{Type: "columns"},
+			req:     &SchemaRequest{Type: RequestTypeColumns},
 			wantErr: "tables must be specified",
 		},
 		{
 			name:    "values without columns",
-			req:     &SchemaRequest{Type: "values"},
+			req:     &SchemaRequest{Type: RequestTypeValues},
 			wantErr: "columns must be specified",
 		},
 	}

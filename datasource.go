@@ -75,16 +75,16 @@ func validateRequest(req *SchemaRequest) error {
 	if req == nil {
 		return fmt.Errorf("schema request must not be nil")
 	}
-	if req.Type != "" && req.Type != "tables" && req.Type != "columns" && req.Type != "values" {
+	switch req.Type {
+	case RequestTypeFullSchema, RequestTypeTables, RequestTypeColumns, RequestTypeValues:
+	default:
 		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values")
 	}
-	if req.Type == "columns" && len(req.Tables) == 0 {
+	if req.Type == RequestTypeColumns && len(req.Tables) == 0 {
 		return fmt.Errorf("tables must be specified when requesting columns")
 	}
-	if req.Type == "values" {
-		if len(req.Columns) == 0 {
-			return fmt.Errorf("columns must be specified when requesting values")
-		}
+	if req.Type == RequestTypeValues && len(req.Columns) == 0 {
+		return fmt.Errorf("columns must be specified when requesting values")
 	}
 	return nil
 }
