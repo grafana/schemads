@@ -14,7 +14,13 @@ import (
 
 func TestFetchSchema_success(t *testing.T) {
 	want := &SchemaResponse{
-		Tables: []string{"users", "orders"},
+		Tables: []string{"issues", "users"},
+		SubTables: map[string][]SubTable{
+			"issues": {
+				{Name: "organization", Root: true, Required: true},
+				{Name: "repository", DependsOn: []string{"organization"}, Required: true},
+			},
+		},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,11 +30,14 @@ func TestFetchSchema_success(t *testing.T) {
 	defer srv.Close()
 
 	got, err := FetchSchema(context.Background(), srv.Client(), srv.URL, &SchemaRequest{
-		Type:   RequestTypeTables,
-		Tables: []string{"users"},
+		Type: RequestTypeTables,
 	})
 	require.NoError(t, err)
 	require.Equal(t, want.Tables, got.Tables)
+	require.Len(t, got.SubTables["issues"], 2)
+	require.True(t, got.SubTables["issues"][0].Root)
+	require.True(t, got.SubTables["issues"][0].Required)
+	require.Equal(t, []string{"organization"}, got.SubTables["issues"][1].DependsOn)
 }
 
 func TestFetchSchema_501_returns_ErrSchemaNotImplemented(t *testing.T) {
@@ -182,7 +191,11 @@ func TestFetchSchema_decodes_full_response(t *testing.T) {
 		FullSchema: Schema{
 			Tables: []Table{
 				{
-					Name: "metrics",
+					Name: "issues",
+					SubTables: []SubTable{
+						{Name: "organization", Root: true, Required: true},
+						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
+					},
 					Columns: []Column{
 						{Name: "ts", Type: ColumnTypeTimestamp},
 						{Name: "value", Type: ColumnTypeFloat64},
@@ -190,9 +203,14 @@ func TestFetchSchema_decodes_full_response(t *testing.T) {
 				},
 			},
 			Functions: []string{"avg", "sum"},
+			SubTableValues: map[string]map[string][]string{
+				"issues": {
+					"organization": {"grafana", "kubernetes"},
+				},
+			},
 		},
 		Columns: map[string][]Column{
-			"metrics": {{Name: "ts", Type: ColumnTypeTimestamp}},
+			"issues": {{Name: "ts", Type: ColumnTypeTimestamp}},
 		},
 		ColumnValues: map[string][]string{
 			"region": {"us-east-1", "eu-west-1"},
@@ -215,6 +233,58 @@ func TestFetchSchema_decodes_full_response(t *testing.T) {
 	require.Equal(t, want.Columns, got.Columns)
 	require.Equal(t, want.ColumnValues, got.ColumnValues)
 	require.Equal(t, want.Errors, got.Errors)
+
+	tbl := got.FullSchema.Tables[0]
+	require.Len(t, tbl.SubTables, 2)
+	require.True(t, tbl.SubTables[0].Root)
+	require.True(t, tbl.SubTables[0].Required)
+	require.Equal(t, "organization", tbl.SubTables[0].Name)
+	require.Equal(t, []string{"organization"}, tbl.SubTables[1].DependsOn)
+	require.True(t, tbl.SubTables[1].Required)
+	require.Equal(t, []string{"grafana", "kubernetes"},
+		got.FullSchema.SubTableValues["issues"]["organization"])
+}
+
+func TestFetchSchema_subtable_values_round_trip(t *testing.T) {
+	want := &SchemaResponse{
+		SubTableValues: map[string][]string{
+			"issues_organization": {"grafana", "kubernetes"},
+			"issues_repository":   {"grafana", "loki", "mimir"},
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var received SchemaRequest
+		require.NoError(t, json.Unmarshal(body, &received))
+		require.Equal(t, RequestTypeSubTableValues, received.Type)
+		require.Len(t, received.SubTables, 1)
+		require.Equal(t, "issues", received.SubTables[0].Table)
+		require.Equal(t, "repository", received.SubTables[0].SubTable)
+		require.Equal(t, "grafana", received.SubTables[0].DependencyValues["organization"])
+
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(want))
+	}))
+	defer srv.Close()
+
+	got, err := FetchSchema(context.Background(), srv.Client(), srv.URL, &SchemaRequest{
+		Type: RequestTypeSubTableValues,
+		SubTables: []SubTableValuesRequest{
+			{
+				Table:            "issues",
+				SubTable:         "repository",
+				DependencyValues: map[string]string{"organization": "grafana"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"grafana", "kubernetes"},
+		got.SubTableValues["issues_organization"])
+	require.Equal(t, []string{"grafana", "loki", "mimir"},
+		got.SubTableValues["issues_repository"])
 }
 
 func TestFetchSchema_invalid_json_response(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-const (
-	SchemaResourcePath = "schema"
-)
+const SchemaResourcePath = "schema"
 
+// parseSchemaRequest decodes a CallResource body into a [SchemaRequest] and
+// flattens the multi-valued header map into single values.
 func parseSchemaRequest(req *backend.CallResourceRequest) (*SchemaRequest, error) {
 	schemaReq := &SchemaRequest{}
 	if len(req.Body) > 0 {

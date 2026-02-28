@@ -10,12 +10,12 @@ import (
 	"net/url"
 )
 
-// FetchSchema sends a schema request to a datasource plugin's schema
-// endpoint and returns the decoded response.
+// FetchSchema sends a [SchemaRequest] to a plugin's schema resource endpoint
+// over HTTP and returns the decoded [SchemaResponse].
 //
-// It owns the serialization contract so that consumers marshal the full
-// SchemaRequest (including Columns) and handle status codes consistently.
-// The url parameter should be the full URL to the schema resource endpoint.
+// schemaURL must be the full URL to the schema resource (e.g.
+// "https://host/api/ds/uid/resources/schema"). Headers set on
+// [SchemaRequest.Headers] are forwarded as HTTP request headers.
 func FetchSchema(ctx context.Context, httpClient *http.Client, schemaURL string, req *SchemaRequest) (*SchemaResponse, error) {
 	if httpClient == nil {
 		return nil, fmt.Errorf("httpClient is required")

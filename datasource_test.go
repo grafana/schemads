@@ -117,6 +117,40 @@ func TestCallResource_schema_tables(t *testing.T) {
 	require.Equal(t, []string{"t1", "t2"}, resp.Tables)
 }
 
+func TestCallResource_schema_tables_with_subtables(t *testing.T) {
+	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
+		return &SchemaResponse{
+			Tables: []string{"issues", "users"},
+			SubTables: map[string][]SubTable{
+				"issues": {
+					{Name: "organization", Root: true, Required: true},
+					{Name: "repository", DependsOn: []string{"organization"}, Required: true},
+				},
+			},
+		}, nil
+	})
+
+	ds := NewSchemaDatasource(handler, nil)
+	sender, get := newTestSender()
+	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
+		Path: SchemaResourcePath,
+		Body: []byte(`{"type":"tables"}`),
+	}, sender)
+	require.NoError(t, err)
+	require.Equal(t, 200, get().Status)
+
+	var resp SchemaResponse
+	require.NoError(t, json.Unmarshal(get().Body, &resp))
+	require.Equal(t, []string{"issues", "users"}, resp.Tables)
+	require.Len(t, resp.SubTables["issues"], 2)
+	require.True(t, resp.SubTables["issues"][0].Root)
+	require.True(t, resp.SubTables["issues"][0].Required)
+	require.Equal(t, "organization", resp.SubTables["issues"][0].Name)
+	require.Equal(t, []string{"organization"}, resp.SubTables["issues"][1].DependsOn)
+	_, hasUsers := resp.SubTables["users"]
+	require.False(t, hasUsers)
+}
+
 func TestCallResource_schema_columns(t *testing.T) {
 	handler := SchemaHandlerFunc(func(_ context.Context, req *SchemaRequest) (*SchemaResponse, error) {
 		require.Equal(t, []string{"users"}, req.Tables)
@@ -325,11 +359,22 @@ func TestValidateRequest(t *testing.T) {
 			req:     &SchemaRequest{Type: RequestTypeValues},
 			wantErr: "columns must be specified",
 		},
+		{
+			name: "subTableValues type allowed",
+			req: &SchemaRequest{Type: RequestTypeSubTableValues, SubTables: []SubTableValuesRequest{
+				{Table: "issues", SubTable: "organization"},
+			}},
+		},
+		{
+			name:    "subTableValues without subTables",
+			req:     &SchemaRequest{Type: RequestTypeSubTableValues},
+			wantErr: "subTables must be specified",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateRequest(tc.req)
+			err := ValidateRequest(tc.req)
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 			} else {
@@ -382,4 +427,134 @@ func TestParseSchemaRequest(t *testing.T) {
 		_, hasEmpty := req.Headers["Empty"]
 		require.False(t, hasEmpty)
 	})
+
+	t.Run("subTableValues body", func(t *testing.T) {
+		req, err := parseSchemaRequest(&backend.CallResourceRequest{
+			Body: []byte(`{"type":"subTableValues","subTables":[{"table":"issues","subTable":"organization","dependencyValues":{"org":"grafana"}}]}`),
+		})
+		require.NoError(t, err)
+		require.Equal(t, "subTableValues", req.Type)
+		require.Len(t, req.SubTables, 1)
+		require.Equal(t, "issues", req.SubTables[0].Table)
+		require.Equal(t, "organization", req.SubTables[0].SubTable)
+		require.Equal(t, "grafana", req.SubTables[0].DependencyValues["org"])
+	})
+}
+
+func TestCallResource_schema_full_with_subtables(t *testing.T) {
+	want := &SchemaResponse{
+		FullSchema: Schema{
+			Tables: []Table{{
+				Name: "issues",
+				SubTables: []SubTable{
+					{Name: "organization", Root: true, Required: true},
+					{Name: "repository", DependsOn: []string{"organization"}, Required: true},
+				},
+				Columns: []Column{{Name: "title", Type: ColumnTypeString}},
+			}},
+			SubTableValues: map[string]map[string][]string{
+				"issues": {
+					"organization": {"grafana", "kubernetes"},
+				},
+			},
+		},
+	}
+	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
+		return want, nil
+	})
+
+	ds := NewSchemaDatasource(handler, nil)
+	sender, get := newTestSender()
+	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
+		Path: SchemaResourcePath,
+		Body: []byte(`{"type":"fullSchema"}`),
+	}, sender)
+	require.NoError(t, err)
+	require.Equal(t, 200, get().Status)
+
+	var resp SchemaResponse
+	require.NoError(t, json.Unmarshal(get().Body, &resp))
+	require.Len(t, resp.FullSchema.Tables, 1)
+
+	tbl := resp.FullSchema.Tables[0]
+	require.Equal(t, "issues", tbl.Name)
+	require.Len(t, tbl.SubTables, 2)
+	require.True(t, tbl.SubTables[0].Root)
+	require.True(t, tbl.SubTables[0].Required)
+	require.Equal(t, "organization", tbl.SubTables[0].Name)
+	require.Equal(t, []string{"organization"}, tbl.SubTables[1].DependsOn)
+	require.True(t, tbl.SubTables[1].Required)
+
+	require.Equal(t, []string{"grafana", "kubernetes"},
+		resp.FullSchema.SubTableValues["issues"]["organization"])
+}
+
+func TestCallResource_schema_full_invalid_subtables(t *testing.T) {
+	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
+		return &SchemaResponse{
+			FullSchema: Schema{
+				Tables: []Table{{
+					Name: "issues",
+					SubTables: []SubTable{
+						{Name: "a", Root: true, DependsOn: []string{"b"}},
+						{Name: "b", DependsOn: []string{"a"}},
+					},
+				}},
+			},
+		}, nil
+	})
+
+	ds := NewSchemaDatasource(handler, nil)
+	sender, get := newTestSender()
+	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
+		Path: SchemaResourcePath,
+		Body: []byte(`{"type":"fullSchema"}`),
+	}, sender)
+	require.NoError(t, err)
+	require.Equal(t, 500, get().Status)
+	require.Contains(t, decodeErrorBody(t, get().Body), "schema validation failed")
+}
+
+func TestCallResource_subTableValues_success(t *testing.T) {
+	handler := SchemaHandlerFunc(func(_ context.Context, req *SchemaRequest) (*SchemaResponse, error) {
+		require.Equal(t, RequestTypeSubTableValues, req.Type)
+		require.Len(t, req.SubTables, 1)
+		require.Equal(t, "issues", req.SubTables[0].Table)
+		require.Equal(t, "organization", req.SubTables[0].SubTable)
+		return &SchemaResponse{
+			SubTableValues: map[string][]string{
+				"issues_organization": {"grafana", "kubernetes"},
+			},
+		}, nil
+	})
+
+	ds := NewSchemaDatasource(handler, nil)
+	sender, get := newTestSender()
+	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
+		Path: SchemaResourcePath,
+		Body: []byte(`{"type":"subTableValues","subTables":[{"table":"issues","subTable":"organization"}]}`),
+	}, sender)
+	require.NoError(t, err)
+	require.Equal(t, 200, get().Status)
+
+	var resp SchemaResponse
+	require.NoError(t, json.Unmarshal(get().Body, &resp))
+	require.Equal(t, []string{"grafana", "kubernetes"},
+		resp.SubTableValues["issues_organization"])
+}
+
+func TestCallResource_subTableValues_missing_subtables(t *testing.T) {
+	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
+		return &SchemaResponse{}, nil
+	})
+
+	ds := NewSchemaDatasource(handler, nil)
+	sender, get := newTestSender()
+	err := ds.CallResource(context.Background(), &backend.CallResourceRequest{
+		Path: SchemaResourcePath,
+		Body: []byte(`{"type":"subTableValues"}`),
+	}, sender)
+	require.NoError(t, err)
+	require.Equal(t, 400, get().Status)
+	require.Contains(t, decodeErrorBody(t, get().Body), "subTables must be specified")
 }

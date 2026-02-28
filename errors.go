@@ -7,9 +7,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-var (
-	ErrSchemaNotImplemented = errors.New("schema not implemented")
-)
+var ErrSchemaNotImplemented = errors.New("schema not implemented")
 
 func sendSchemaError(sender backend.CallResourceResponseSender, status int, message string) error {
 	body, err := json.Marshal(map[string]string{"error": message})

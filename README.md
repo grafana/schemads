@@ -3,191 +3,205 @@
 > [!CAUTION]
 > This repository is experimental and in progress. Do not use this module.
 
-A wrapper for Grafana data source plugins that adds **schema discovery** via `CallResource`. Plugins implement the `SchemaHandler` interface; consumers call the `schema` resource path to retrieve table/column metadata.
+A wrapper for Grafana data source plugins that adds **schema discovery** via `CallResource`. Plugins implement `SchemaHandler` (or the higher-level `TableSchemaProvider`); consumers call the `schema` resource path to retrieve table, column, sub-table, and value metadata.
 
-## Behaviour
+## Overview
 
-- **Resource path:** `POST` to path `schema` (`schemas.SchemaResourcePath`) with a JSON body containing a `type` field. If the plugin implements `schemas.SchemaHandler`, the wrapper calls it and returns a `SchemaResponse` as JSON. Otherwise it returns **501 Not Implemented**.
-- **Other resources:** Any other `CallResource` path is forwarded to the wrapped `CallResourceHandler`. If no next handler is set, returns **404**.
+- **Resource path:** `POST` to `schema` (`SchemaResourcePath`) with a JSON body containing a `type` field.
+- **Schema available:** the wrapper calls the configured `SchemaHandler` and returns a `SchemaResponse` as JSON.
+- **Schema not configured:** returns **501 Not Implemented**.
+- **Other paths:** forwarded to the wrapped `CallResourceHandler`, or **404** if none is set.
 
-## Usage
+## Plugin integration
 
-### Option A: TableSchemaProvider (recommended)
+### Option A – TableSchemaProvider (recommended)
 
-Implement the `TableSchemaProvider` interface to split schema handling into per-request-type methods. The library handles request routing via `NewSchemaHandlerFromProvider`:
+Implement `TableSchemaProvider` to handle each request type in a separate method. The library routes requests automatically via `NewSchemaHandlerFromProvider`:
 
 ```go
-package myplugin
-
-import (
-	"context"
-
-	schemas "github.com/grafana/schemads"
-)
-
-type MyProvider struct {
-	// datasource-specific fields
+type TableSchemaProvider interface {
+    FullSchema(ctx context.Context) (*schemas.Schema, error)
+    Tables(ctx context.Context) ([]string, map[string][]schemas.SubTable, error)
+    Columns(ctx context.Context, tables []string) (map[string][]schemas.Column, error)
+    ColumnValues(ctx context.Context, columns []schemas.ColumnValuesRequest) (map[string][]string, error)
+    SubTableValues(ctx context.Context, subTables []schemas.SubTableValuesRequest) (map[string][]string, error)
 }
+```
+
+Example:
+
+```go
+type MyProvider struct{}
 
 func (p *MyProvider) FullSchema(ctx context.Context) (*schemas.Schema, error) {
-	return &schemas.Schema{
-		Tables: []schemas.Table{
-			{
-				Name: "users",
-				Columns: []schemas.Column{
-					{Name: "id", Type: schemas.ColumnTypeInt64},
-					{Name: "name", Type: schemas.ColumnTypeString},
-					{Name: "active", Type: schemas.ColumnTypeBoolean, Operators: []schemas.Operator{schemas.OperatorEquals}},
-					{Name: "created_at", Type: schemas.ColumnTypeTimestamp},
-				},
-			},
-		},
-	}, nil
+    return &schemas.Schema{
+        Tables: []schemas.Table{{
+            Name: "issues",
+            SubTables: []schemas.SubTable{
+                {Name: "organization", Root: true, Required: true},
+                {Name: "repository", DependsOn: []string{"organization"}, Required: true},
+            },
+            Columns: []schemas.Column{
+                {Name: "id", Type: schemas.ColumnTypeInt64},
+                {Name: "title", Type: schemas.ColumnTypeString},
+            },
+        }},
+    }, nil
 }
 
-func (p *MyProvider) Tables(ctx context.Context) ([]string, error) {
-	return []string{"users", "orders"}, nil
+func (p *MyProvider) Tables(ctx context.Context) ([]string, map[string][]schemas.SubTable, error) {
+    return []string{"issues"}, map[string][]schemas.SubTable{
+        "issues": {
+            {Name: "organization", Root: true, Required: true},
+            {Name: "repository", DependsOn: []string{"organization"}, Required: true},
+        },
+    }, nil
 }
 
 func (p *MyProvider) Columns(ctx context.Context, tables []string) (map[string][]schemas.Column, error) {
-	// return columns for the requested tables
+    // return columns for the requested tables
 }
 
 func (p *MyProvider) ColumnValues(ctx context.Context, columns []schemas.ColumnValuesRequest) (map[string][]string, error) {
-	// return possible values, or empty map if not supported
-	return make(map[string][]string), nil
+    return map[string][]string{}, nil
+}
+
+func (p *MyProvider) SubTableValues(ctx context.Context, subTables []schemas.SubTableValuesRequest) (map[string][]string, error) {
+    result := make(map[string][]string)
+    for _, st := range subTables {
+        key := st.Table + "_" + st.SubTable
+        result[key] = []string{"value1", "value2"}
+    }
+    return result, nil
 }
 
 // Convert to SchemaHandler:
 // handler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
 ```
 
-### Option B: Direct SchemaHandler implementation
+### Option B – Direct SchemaHandler
 
-For full control, implement `SchemaHandler` directly. Use the `RequestType` constants to switch on `req.Type`:
+For full control, implement `SchemaHandler` directly:
 
 ```go
 func (h *MyHandler) Schema(ctx context.Context, req *schemas.SchemaRequest) (*schemas.SchemaResponse, error) {
-	switch req.Type {
-	case schemas.RequestTypeFullSchema:
-		// return full schema ...
-	case schemas.RequestTypeTables:
-		return &schemas.SchemaResponse{Tables: []string{"users", "orders"}}, nil
-	case schemas.RequestTypeColumns:
-		// return columns for req.Tables ...
-	case schemas.RequestTypeValues:
-		// return values for req.Columns ...
-	}
-	return nil, fmt.Errorf("unsupported request type: %s", req.Type)
+    switch req.Type {
+    case schemas.RequestTypeFullSchema:
+        // return full schema
+    case schemas.RequestTypeTables:
+        // return tables and sub-tables
+    case schemas.RequestTypeColumns:
+        // return columns for req.Tables
+    case schemas.RequestTypeValues:
+        // return values for req.Columns
+    case schemas.RequestTypeSubTableValues:
+        // return values for req.SubTables
+    }
+    return nil, fmt.Errorf("unsupported request type: %s", req.Type)
 }
+```
+
+You can also use `SchemaHandlerFunc` to wrap a plain function:
+
+```go
+handler := schemas.SchemaHandlerFunc(func(ctx context.Context, req *schemas.SchemaRequest) (*schemas.SchemaResponse, error) {
+    // ...
+})
 ```
 
 ### Wiring into the plugin
 
-Use `NewSchemaDatasource` to wrap your schema handler. The returned `*SchemaDatasource` implements `backend.CallResourceHandler` — embed it in your instance and delegate `CallResource` to it:
+`NewSchemaDatasource` returns a `*SchemaDatasource` that implements `backend.CallResourceHandler`:
 
 ```go
-package plugin
-
-import (
-	"context"
-
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
-	schemas "github.com/grafana/schemads"
-)
-
-type MyInstance struct {
-	*schemas.SchemaDatasource
-}
-
-func (m *MyInstance) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
-	return m.SchemaDatasource.CallResource(ctx, req, sender)
-}
-
 func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	handler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
-
-	// Pass an existing CallResourceHandler as the second argument to
-	// forward non-schema resource calls, or nil if not needed.
-	schemaDs := schemas.NewSchemaDatasource(handler, nil)
-
-	return &MyInstance{SchemaDatasource: schemaDs}, nil
+    handler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
+    // Pass an existing CallResourceHandler as next to forward non-schema
+    // resource calls, or nil if not needed.
+    schemaDs := schemas.NewSchemaDatasource(handler, nil)
+    return &MyInstance{SchemaDatasource: schemaDs}, nil
 }
 ```
 
-### Without schema support
-
-Pass `nil` as the schema handler. Requests to the schema path return **501 Not Implemented**; other paths are forwarded to the next handler.
+To opt out of schema support, pass `nil` as the handler — schema requests return 501 and everything else is forwarded:
 
 ```go
-schemaDs := schemas.NewSchemaDatasource(nil, existingCallResourceHandler)
+schemaDs := schemas.NewSchemaDatasource(nil, existingHandler)
 ```
 
-## Client-side usage
+## Client usage
 
-Consumers that need to fetch schema over HTTP can use `FetchSchema`, which owns the full request serialization and response handling. Both `httpClient` and `schemaURL` are required. Any headers set on `SchemaRequest.Headers` are forwarded to the HTTP request.
+`FetchSchema` sends a `SchemaRequest` over HTTP and returns the decoded `SchemaResponse`. Both `httpClient` and `schemaURL` are required. Headers on `SchemaRequest.Headers` are forwarded.
 
 ```go
 resp, err := schemas.FetchSchema(ctx, httpClient, schemaURL, &schemas.SchemaRequest{
-	Type:   schemas.RequestTypeColumns,
-	Tables: []string{"users"},
+    Type:   schemas.RequestTypeTables,
 })
+// resp.Tables    – []string
+// resp.SubTables – map[string][]SubTable
 ```
 
-## Request & response format
+Fetching sub-table values incrementally:
 
-### Request body
-
-`POST` to `CallResource` with path `schemas.SchemaResourcePath` (`"schema"`):
-
-```json
-{
-  "type": "columns",
-  "tables": ["users", "orders"],
-  "columns": []
-}
+```go
+resp, err := schemas.FetchSchema(ctx, httpClient, schemaURL, &schemas.SchemaRequest{
+    Type: schemas.RequestTypeSubTableValues,
+    SubTables: []schemas.SubTableValuesRequest{{
+        Table:            "issues",
+        SubTable:         "repository",
+        DependencyValues: map[string]string{"organization": "grafana"},
+    }},
+})
+// resp.SubTableValues["issues_repository"] – []string
 ```
 
-| `type`         | Constant                | Description                 | Required fields |
-| -------------- | ----------------------- | --------------------------- | --------------- |
-| `"fullSchema"` | `RequestTypeFullSchema` | Full schema                 | None            |
-| `"tables"`     | `RequestTypeTables`     | List of table names         | None            |
-| `"columns"`    | `RequestTypeColumns`    | Columns for specific tables | `tables`        |
-| `"values"`     | `RequestTypeValues`     | Values for specific columns | `columns`       |
+## Sub-tables
 
-### Response body
+Sub-tables model hierarchical scoping parameters that consumers resolve before querying a table (e.g. a GitHub data source requires selecting an **organization** and then a **repository** before querying **issues**).
 
-```json
-{
-  "fullSchema": {
-    "tables": [
-      {
-        "name": "users",
-        "columns": [
-          { "name": "id", "type": "int64" },
-          { "name": "name", "type": "string" },
-          { "name": "active", "type": "boolean", "operators": ["=="] },
-          { "name": "created_at", "type": "timestamp" }
-        ],
-        "subTables": []
-      }
-    ],
-    "functions": [],
-    "subTableValues": {}
-  },
-  "tables": ["users", "orders"],
-  "columns": {
-    "users": [{ "name": "id", "type": "int64" }]
-  },
-  "columnValues": {},
-  "errors": {}
-}
-```
+### Definition
 
-Which fields are populated depends on `type` in the request.
+Each `SubTable` has:
 
-### Column types
+| Field       | Type       | Description                                                  |
+| ----------- | ---------- | ------------------------------------------------------------ |
+| `Name`      | `string`   | Unique name within the parent table.                         |
+| `DependsOn` | `[]string` | Sibling sub-tables whose values must be selected first.      |
+| `Root`      | `bool`     | Entry point with no dependencies. At least one is required.  |
+| `Required`  | `bool`     | Must be resolved before the table can be queried.            |
+
+### Validation
+
+`ValidateSchema` is called automatically for `fullSchema` responses and enforces:
+
+1. **Unique names** – no two sub-tables in a table share a name.
+2. **Valid references** – every `DependsOn` entry names a sibling sub-table.
+3. **Acyclic graph** – the dependency graph has no cycles.
+4. **Root rules** – at least one sub-table is `Root` and root sub-tables have no dependencies.
+5. **Required chain** – a required sub-table may only depend on other required sub-tables.
+6. **SubTableValues integrity** – `Schema.SubTableValues` keys reference existing tables and root sub-tables only. Non-root sub-table values depend on ancestor selections and must be fetched incrementally via a `"subTableValues"` request with `DependencyValues`.
+
+Call `ValidateSchema` directly to validate schemas you construct manually.
+
+### Composite keys
+
+Sub-table values in `SchemaResponse.SubTableValues` use composite keys of the form `table_subTable` — e.g. `"issues_organization"`.
+
+> **Note:** table and sub-table names may contain underscores, making this separator ambiguous. A future version will adopt a safer delimiter once the protocol is versioned.
+
+## Request types
+
+| `type`             | Constant                    | Required fields          | Response fields                |
+| ------------------ | --------------------------- | ------------------------ | ------------------------------ |
+| `"fullSchema"`     | `RequestTypeFullSchema`     | –                        | `FullSchema`                   |
+| `"tables"`         | `RequestTypeTables`         | –                        | `Tables`, `SubTables`          |
+| `"columns"`        | `RequestTypeColumns`        | `Tables`                 | `Columns`                      |
+| `"values"`         | `RequestTypeValues`         | `Columns`                | `ColumnValues`                 |
+| `"subTableValues"` | `RequestTypeSubTableValues` | `SubTables`              | `SubTableValues`               |
+
+`ValidateRequest` is called automatically before dispatching and rejects unknown types or missing required fields.
+
+## Column types
 
 Types are aligned with go-mysql-server's type system:
 
@@ -196,26 +210,15 @@ Types are aligned with go-mysql-server's type system:
 | Boolean    | `boolean`                                                                |
 | Integers   | `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64` |
 | Float      | `float32`, `float64`                                                     |
-| Decimal    | `decimal` (use `Column.Precision` and `Column.Scale`)                    |
+| Decimal    | `decimal` (use `Column.Precision` / `Column.Scale`)                      |
 | String     | `string`                                                                 |
 | Date/Time  | `date`, `datetime`, `timestamp`, `time`, `year`                          |
 | Structured | `json`, `enum` (use `Column.Values`), `set` (use `Column.Values`)        |
-| Binary     | `blob`, `bit` (use `Column.Size`)                                        |
+| Binary     | `blob`, `bit` (use `Column.Size`, 1-64)                                  |
 
-### Column metadata
+## Operators
 
-Columns can carry optional metadata:
-
-| Field         | Type         | Purpose                                                       |
-| ------------- | ------------ | ------------------------------------------------------------- |
-| `operators`   | `[]Operator` | Filter operations the column supports (`==`, `!=`, `>`, etc.) |
-| `description` | `string`     | Human/LLM-readable documentation                              |
-| `precision`   | `*int`       | Decimal precision                                             |
-| `scale`       | `*int`       | Decimal scale                                                 |
-| `size`        | `*int`       | Bit width for `bit` type (1-64)                               |
-| `values`      | `[]string`   | Allowed members for `enum` and `set` types                    |
-
-### Operators
+Columns declare which filter operations they support via `Column.Operators`:
 
 | Constant                     | Value  |
 | ---------------------------- | ------ |
@@ -228,22 +231,14 @@ Columns can carry optional metadata:
 | `OperatorLike`               | `like` |
 | `OperatorIn`                 | `in`   |
 
-### Response metadata
+## Error handling
 
-| Field    | Type                | Purpose                                      |
-| -------- | ------------------- | -------------------------------------------- |
-| `errors` | `map[string]string` | Per-table/column errors for partial failures |
+Errors are returned as JSON `{"error": "..."}` with an HTTP status:
 
-### Error responses
+| Status | Meaning                                             |
+| ------ | --------------------------------------------------- |
+| `400`  | Invalid request (unknown type, missing fields, etc) |
+| `500`  | Handler error or schema validation failure          |
+| `501`  | No `SchemaHandler` configured                       |
 
-Errors are returned as JSON with an HTTP status code:
-
-| Status | Meaning                                                                 |
-| ------ | ----------------------------------------------------------------------- |
-| `400`  | Invalid request (malformed JSON, unknown type, missing required fields) |
-| `500`  | Handler returned an error                                               |
-| `501`  | No `SchemaHandler` configured                                           |
-
-```json
-{ "error": "tables must be specified when requesting columns" }
-```
+Partial failures can be reported via `SchemaResponse.Errors` (keyed by table or column name).
