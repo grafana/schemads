@@ -10,16 +10,10 @@ const (
 	SchemaResourcePath = "schema"
 )
 
-type schemaRequestBody struct {
-	Type    string                      `json:"type"`
-	Tables  []string                    `json:"tables"`
-	Columns []ColumnsInformationRequest `json:"columns"`
-}
-
 func parseSchemaRequest(req *backend.CallResourceRequest) (*SchemaRequest, error) {
-	body := schemaRequestBody{}
+	schemaReq := &SchemaRequest{}
 	if len(req.Body) > 0 {
-		if err := json.Unmarshal(req.Body, &body); err != nil {
+		if err := json.Unmarshal(req.Body, schemaReq); err != nil {
 			return nil, err
 		}
 	}
@@ -29,10 +23,6 @@ func parseSchemaRequest(req *backend.CallResourceRequest) (*SchemaRequest, error
 			headers[k] = v[0]
 		}
 	}
-	return &SchemaRequest{
-		Headers: headers,
-		Type:    body.Type,
-		Tables:  body.Tables,
-		Columns: body.Columns,
-	}, nil
+	schemaReq.Headers = headers
+	return schemaReq, nil
 }

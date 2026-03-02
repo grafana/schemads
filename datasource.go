@@ -3,10 +3,10 @@ package schemas
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 )
 
 // SchemaDatasource wraps a Grafana data source to add support for schema requests
@@ -29,10 +29,6 @@ func NewSchemaDatasource(schemaHandler SchemaHandler, next backend.CallResourceH
 	}
 }
 
-func (ds *SchemaDatasource) NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	return ds, nil
-}
-
 func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	if req != nil && req.Path == SchemaResourcePath {
 		return ds.handleSchemaResource(ctx, req, sender)
@@ -48,17 +44,20 @@ func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallR
 
 func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	if ds.SchemaHandler == nil {
-		return sendSchemaError(sender, http.StatusNotImplemented, "schema not implemented")
+		return sendSchemaError(sender, http.StatusNotImplemented, ErrSchemaNotImplemented.Error())
 	}
 	tableReq, err := parseSchemaRequest(req)
 	if err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, "invalid request: "+err.Error())
 	}
-	if err := ValidateRequest(tableReq); err != nil {
+	if err := validateRequest(tableReq); err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, err.Error())
 	}
 
 	resp, err := ds.SchemaHandler.Schema(ctx, tableReq)
+	if err != nil {
+		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
+	}
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
@@ -70,4 +69,22 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		},
 		Body: data,
 	})
+}
+
+func validateRequest(req *SchemaRequest) error {
+	if req == nil {
+		return fmt.Errorf("schema request must not be nil")
+	}
+	if req.Type != "" && req.Type != "tables" && req.Type != "columns" && req.Type != "values" {
+		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values")
+	}
+	if req.Type == "columns" && len(req.Tables) == 0 {
+		return fmt.Errorf("tables must be specified when requesting columns")
+	}
+	if req.Type == "values" {
+		if len(req.Columns) == 0 {
+			return fmt.Errorf("columns must be specified when requesting values")
+		}
+	}
+	return nil
 }
