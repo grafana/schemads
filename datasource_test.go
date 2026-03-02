@@ -71,7 +71,7 @@ func TestCallResource_schema_not_implemented(t *testing.T) {
 
 func TestCallResource_schema_full(t *testing.T) {
 	want := &SchemaResponse{
-		FullSchema: Schema{
+		FullSchema: &Schema{
 			Tables: []Table{{Name: "users", Columns: []Column{
 				{Name: "id", Type: ColumnTypeInt64},
 				{Name: "name", Type: ColumnTypeString},
@@ -443,7 +443,7 @@ func TestParseSchemaRequest(t *testing.T) {
 
 func TestCallResource_schema_full_with_subtables(t *testing.T) {
 	want := &SchemaResponse{
-		FullSchema: Schema{
+		FullSchema: &Schema{
 			Tables: []Table{{
 				Name: "issues",
 				SubTables: []SubTable{
@@ -492,7 +492,7 @@ func TestCallResource_schema_full_with_subtables(t *testing.T) {
 func TestCallResource_schema_full_invalid_subtables(t *testing.T) {
 	handler := SchemaHandlerFunc(func(_ context.Context, _ *SchemaRequest) (*SchemaResponse, error) {
 		return &SchemaResponse{
-			FullSchema: Schema{
+			FullSchema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
 					SubTables: []SubTable{

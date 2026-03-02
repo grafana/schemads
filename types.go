@@ -93,7 +93,7 @@ type SubTableValuesRequest struct {
 // Which fields are populated depends on the [SchemaRequest.Type] that was sent.
 type SchemaResponse struct {
 	// FullSchema is populated for "fullSchema" requests.
-	FullSchema Schema `json:"fullSchema,omitempty"`
+	FullSchema *Schema `json:"fullSchema,omitempty"`
 	// Tables is populated for "tables" requests.
 	Tables []string `json:"tables,omitempty"`
 	// Columns is populated for "columns" requests (table name -> columns).
@@ -138,7 +138,7 @@ type Table struct {
 type SubTable struct {
 	Name      string   `json:"name"`
 	DependsOn []string `json:"dependsOn,omitempty"`
-	Root      bool     `json:"root,omitempty"`
+	Root      bool     `json:"root"`
 	Required  bool     `json:"required,omitempty"`
 }
 
