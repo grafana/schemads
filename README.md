@@ -163,12 +163,12 @@ Sub-tables model hierarchical scoping parameters that consumers resolve before q
 
 Each `SubTable` has:
 
-| Field       | Type       | Description                                                  |
-| ----------- | ---------- | ------------------------------------------------------------ |
-| `Name`      | `string`   | Unique name within the parent table.                         |
-| `DependsOn` | `[]string` | Sibling sub-tables whose values must be selected first.      |
-| `Root`      | `bool`     | Entry point with no dependencies. At least one is required.  |
-| `Required`  | `bool`     | Must be resolved before the table can be queried.            |
+| Field       | Type       | Description                                                 |
+| ----------- | ---------- | ----------------------------------------------------------- |
+| `Name`      | `string`   | Unique name within the parent table.                        |
+| `DependsOn` | `[]string` | Sibling sub-tables whose values must be selected first.     |
+| `Root`      | `bool`     | Entry point with no dependencies. At least one is required. |
+| `Required`  | `bool`     | Must be resolved before the table can be queried.           |
 
 ### Validation
 
@@ -191,13 +191,13 @@ Sub-table values in `SchemaResponse.SubTableValues` use composite keys of the fo
 
 ## Request types
 
-| `type`             | Constant                    | Required fields          | Response fields                |
-| ------------------ | --------------------------- | ------------------------ | ------------------------------ |
-| `"fullSchema"`     | `RequestTypeFullSchema`     | –                        | `FullSchema`                   |
-| `"tables"`         | `RequestTypeTables`         | –                        | `Tables`, `SubTables`          |
-| `"columns"`        | `RequestTypeColumns`        | `Tables`                 | `Columns`                      |
-| `"values"`         | `RequestTypeValues`         | `Columns`                | `ColumnValues`                 |
-| `"subTableValues"` | `RequestTypeSubTableValues` | `SubTables`              | `SubTableValues`               |
+| `type`             | Constant                    | Required fields | Response fields       |
+| ------------------ | --------------------------- | --------------- | --------------------- |
+| `"fullSchema"`     | `RequestTypeFullSchema`     | –               | `FullSchema`          |
+| `"tables"`         | `RequestTypeTables`         | –               | `Tables`, `SubTables` |
+| `"columns"`        | `RequestTypeColumns`        | `Tables`        | `Columns`             |
+| `"values"`         | `RequestTypeValues`         | `Columns`       | `ColumnValues`        |
+| `"subTableValues"` | `RequestTypeSubTableValues` | `SubTables`     | `SubTableValues`      |
 
 `ValidateRequest` is called automatically before dispatching and rejects unknown types or missing required fields.
 

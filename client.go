@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 )
 
 // FetchSchema sends a [SchemaRequest] to a plugin's schema resource endpoint
@@ -55,7 +57,7 @@ func FetchSchema(ctx context.Context, httpClient *http.Client, schemaURL string,
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			fmt.Errorf("schemads: failed to close response body: %w", err)
+			log.DefaultLogger.Warn("schemads: failed to close response body: %w", err)
 		}
 	}()
 
