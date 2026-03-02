@@ -154,6 +154,9 @@ func TestCallResource_schema_empty_body(t *testing.T) {
 	}, sender)
 	require.NoError(t, err)
 	require.Equal(t, 200, get().Status)
+	var schema SchemaResponse
+	require.NoError(t, json.Unmarshal(get().Body, &schema))
+	require.Equal(t, []string{"default"}, schema.Tables)
 }
 
 func TestCallResource_schema_handler_error(t *testing.T) {
