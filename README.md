@@ -123,6 +123,46 @@ func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSetting
 }
 ```
 
+### Adding schema support to an existing data source
+
+If your plugin already implements `backend.CallResourceHandler` (e.g. for health checks, autocomplete, or custom endpoints), pass it as the `next` argument. Schema requests are intercepted; everything else is forwarded to your existing handler unchanged:
+
+```go
+type MyDatasource struct {
+    schemas.SchemaDatasource
+}
+
+func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+    ds := &MyDatasource{}
+
+    schemaHandler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
+    // Pass ds as next — any non-schema resource calls continue to
+    // be handled by MyDatasource.handleCustomResource.
+    ds.SchemaDatasource = *schemas.NewSchemaDatasource(schemaHandler, backend.CallResourceHandlerFunc(ds.handleCustomResource))
+
+    return ds, nil
+}
+
+func (ds *MyDatasource) handleCustomResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+    switch req.Path {
+    case "custom-endpoint":
+        return sender.Send(&backend.CallResourceResponse{
+            Status: 200,
+            Body:   []byte(`{"ok": true}`),
+        })
+    default:
+        return sender.Send(&backend.CallResourceResponse{
+            Status: 404,
+            Body:   []byte("not found"),
+        })
+    }
+}
+```
+
+With this setup:
+- `POST /schema` is handled by the schema handler.
+- All other paths (e.g. `/custom-endpoint`) are forwarded to `handleCustomResource`.
+
 To opt out of schema support, pass `nil` as the handler — schema requests return 501 and everything else is forwarded:
 
 ```go
