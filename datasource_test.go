@@ -71,7 +71,7 @@ func TestCallResource_schema_not_implemented(t *testing.T) {
 
 func TestCallResource_schema_full(t *testing.T) {
 	want := &SchemaResponse{
-		FullSchema: Schema{
+		FullSchema: &Schema{
 			Tables: []Table{{Name: "users", Columns: []Column{
 				{Name: "id", Type: ColumnTypeNumber},
 				{Name: "name", Type: ColumnTypeString},

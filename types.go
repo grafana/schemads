@@ -41,7 +41,7 @@ type ColumnsInformationRequest struct {
 
 // SchemaResponse is the response containing schema/tables/columns/values.
 type SchemaResponse struct {
-	FullSchema   Schema              `json:"fullSchema,omitempty"`
+	FullSchema   *Schema             `json:"fullSchema,omitempty"`
 	Tables       []string            `json:"tables,omitempty"`
 	Columns      map[string][]Column `json:"columns,omitempty"`
 	ColumnValues map[string][]string `json:"columnValues,omitempty"`

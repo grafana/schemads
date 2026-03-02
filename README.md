@@ -50,7 +50,7 @@ func (h *MySchemaHandler) Schema(ctx context.Context, req *schemas.SchemaRequest
 
 	default: // full schema
 		return &schemas.SchemaResponse{
-			FullSchema: schemas.Schema{
+			FullSchema: &schemas.Schema{
 				Tables: []schemas.Table{
 					{
 						Name: "users",
