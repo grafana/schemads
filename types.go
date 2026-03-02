@@ -65,7 +65,7 @@ type Table struct {
 type SubTable struct {
 	Name      string   `json:"name"`
 	DependsOn []string `json:"dependsOn,omitempty"`
-	Root      bool     `json:"root,omitempty"`
+	Root      bool     `json:"root"`
 }
 
 // Column is a column name and type.
