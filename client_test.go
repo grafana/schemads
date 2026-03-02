@@ -188,7 +188,7 @@ func TestFetchSchema_empty_url_returns_error(t *testing.T) {
 
 func TestFetchSchema_decodes_full_response(t *testing.T) {
 	want := &SchemaResponse{
-		FullSchema: Schema{
+		FullSchema: &Schema{
 			Tables: []Table{
 				{
 					Name: "issues",

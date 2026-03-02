@@ -72,7 +72,7 @@ func (h *providerHandler) Schema(ctx context.Context, req *SchemaRequest) (*Sche
 		if schema == nil {
 			return &SchemaResponse{}, nil
 		}
-		return &SchemaResponse{FullSchema: *schema}, nil
+		return &SchemaResponse{FullSchema: schema}, nil
 	case RequestTypeSubTableValues:
 		p, err := h.provider.SubTableValues(ctx, req.SubTables)
 		if err != nil {

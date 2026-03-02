@@ -61,7 +61,7 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
 	}
 	if tableReq.Type == RequestTypeFullSchema && resp != nil {
-		if err := ValidateSchema(&resp.FullSchema); err != nil {
+		if err := ValidateSchema(resp.FullSchema); err != nil {
 			return sendSchemaError(sender, http.StatusInternalServerError, "schema validation failed: "+err.Error())
 		}
 	}
