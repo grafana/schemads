@@ -160,6 +160,7 @@ func (ds *MyDatasource) handleCustomResource(ctx context.Context, req *backend.C
 ```
 
 With this setup:
+
 - `POST /schema` is handled by the schema handler.
 - All other paths (e.g. `/custom-endpoint`) are forwarded to `handleCustomResource`.
 
