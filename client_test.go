@@ -101,7 +101,7 @@ func TestFetchSchema_request_body_contains_full_schema_request(t *testing.T) {
 		Type:   RequestTypeValues,
 		Tables: []string{"events"},
 		Columns: []ColumnValuesRequest{
-			{Table: "events", Parameters: map[string]string{"col": "status"}},
+			{Table: "events", Columns: []string{"status"}, Parameters: map[string]string{"org": "foo"}},
 		},
 	}
 
@@ -115,7 +115,8 @@ func TestFetchSchema_request_body_contains_full_schema_request(t *testing.T) {
 		require.Equal(t, sent.Tables, received.Tables)
 		require.Len(t, received.Columns, 1)
 		require.Equal(t, "events", received.Columns[0].Table)
-		require.Equal(t, "status", received.Columns[0].Parameters["col"])
+		require.Equal(t, "status", received.Columns[0].Columns[0])
+		require.Equal(t, "foo", received.Columns[0].Parameters["org"])
 
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(&SchemaResponse{}))

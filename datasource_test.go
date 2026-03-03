@@ -341,7 +341,7 @@ func TestValidateRequest(t *testing.T) {
 		{
 			name: "values with columns",
 			req: &SchemaRequest{Type: RequestTypeValues, Columns: []ColumnValuesRequest{
-				{Table: "t1"},
+				{Table: "t1", Columns: []string{"c1"}},
 			}},
 		},
 		{

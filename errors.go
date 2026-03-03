@@ -12,7 +12,7 @@ var ErrSchemaNotImplemented = errors.New("schema not implemented")
 func sendSchemaError(sender backend.CallResourceResponseSender, status int, message string) error {
 	body, err := json.Marshal(map[string]string{"error": message})
 	if err != nil {
-		body = []byte(`{"error":"internal error"}`)
+		body = []byte(`{"error":"failed to marshal schema error"}`)
 	}
 	return sender.Send(&backend.CallResourceResponse{
 		Status:  status,

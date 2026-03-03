@@ -12,19 +12,22 @@ func ValidateRequest(req *SchemaRequest) error {
 		return fmt.Errorf("schema request must not be nil")
 	}
 	switch req.Type {
-	case RequestTypeFullSchema, RequestTypeTables, RequestTypeColumns,
-		RequestTypeValues, RequestTypeSubTableValues:
+	case RequestTypeFullSchema, RequestTypeTables:
+		// no extra fields required
+	case RequestTypeColumns:
+		if len(req.Tables) == 0 {
+			return fmt.Errorf("tables must be specified when requesting columns")
+		}
+	case RequestTypeValues:
+		if len(req.Columns) == 0 {
+			return fmt.Errorf("columns must be specified when requesting values")
+		}
+	case RequestTypeSubTableValues:
+		if len(req.SubTables) == 0 {
+			return fmt.Errorf("subTables must be specified when requesting sub-table values")
+		}
 	default:
 		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values, subTableValues")
-	}
-	if req.Type == RequestTypeColumns && len(req.Tables) == 0 {
-		return fmt.Errorf("tables must be specified when requesting columns")
-	}
-	if req.Type == RequestTypeValues && len(req.Columns) == 0 {
-		return fmt.Errorf("columns must be specified when requesting values")
-	}
-	if req.Type == RequestTypeSubTableValues && len(req.SubTables) == 0 {
-		return fmt.Errorf("subTables must be specified when requesting sub-table values")
 	}
 	return nil
 }
@@ -55,6 +58,9 @@ func ValidateSchema(schema *Schema) error {
 
 	tablesByName := make(map[string]*Table, len(schema.Tables))
 	for i := range schema.Tables {
+		if _, duplicate := tablesByName[schema.Tables[i].Name]; duplicate {
+			return fmt.Errorf("duplicate table name %q", schema.Tables[i].Name)
+		}
 		tablesByName[schema.Tables[i].Name] = &schema.Tables[i]
 	}
 
@@ -226,20 +232,20 @@ func validateSubTableValues(subTableValues map[string]map[string][]string, table
 			return fmt.Errorf("subTableValues references non-existent table %q", tableName)
 		}
 
-		subTableByName := make(map[string]*SubTable, len(table.SubTables))
+		subTableRoots := make(map[string]bool, len(table.SubTables))
 		for i := range table.SubTables {
-			subTableByName[table.SubTables[i].Name] = &table.SubTables[i]
+			subTableRoots[table.SubTables[i].Name] = table.SubTables[i].Root
 		}
 
 		for subTableName := range valuesBySubTable {
-			st, exists := subTableByName[subTableName]
+			root, exists := subTableRoots[subTableName]
 			if !exists {
 				return fmt.Errorf(
 					"subTableValues references non-existent sub-table %q on table %q",
 					subTableName, tableName,
 				)
 			}
-			if !st.Root {
+			if !root {
 				return fmt.Errorf(
 					"subTableValues contains non-root sub-table %q on table %q; "+
 						"only root sub-tables may have pre-populated values",

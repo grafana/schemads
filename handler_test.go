@@ -96,7 +96,7 @@ func TestNewSchemaHandlerFromProvider(t *testing.T) {
 	})
 
 	t.Run("routes values request and forwards column requests", func(t *testing.T) {
-		cols := []ColumnValuesRequest{{Table: "t1", Parameters: map[string]string{"col": "status"}}}
+		cols := []ColumnValuesRequest{{Table: "t1", Columns: []string{"status"}, Parameters: map[string]string{"org": "foo"}}}
 		p := &mockProvider{
 			columnValues: func(_ context.Context, c []ColumnValuesRequest) (map[string][]string, error) {
 				require.Equal(t, cols, c)
@@ -163,7 +163,7 @@ func TestNewSchemaHandlerFromProvider(t *testing.T) {
 		h := NewSchemaHandlerFromProvider(p)
 		_, err := h.Schema(context.Background(), &SchemaRequest{
 			Type:    RequestTypeValues,
-			Columns: []ColumnValuesRequest{{Table: "t1"}},
+			Columns: []ColumnValuesRequest{{Table: "t1", Columns: []string{"c1"}}},
 		})
 		require.EqualError(t, err, "values boom")
 	})

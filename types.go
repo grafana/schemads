@@ -76,6 +76,7 @@ type SchemaRequest struct {
 // requested, along with optional parameters to scope the result.
 type ColumnValuesRequest struct {
 	Table      string            `json:"table"`
+	Columns    []string          `json:"columns,omitempty"`
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
@@ -139,7 +140,7 @@ type SubTable struct {
 	Name      string   `json:"name"`
 	DependsOn []string `json:"dependsOn,omitempty"`
 	Root      bool     `json:"root"`
-	Required  bool     `json:"required,omitempty"`
+	Required  bool     `json:"required"`
 }
 
 // Operator represents a filter operation that a column supports.

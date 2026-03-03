@@ -93,12 +93,24 @@ func TestValidateSchema(t *testing.T) {
 						{Name: "d", DependsOn: []string{"c", "b"}},
 						{Name: "x", DependsOn: []string{"d"}},
 						{Name: "y", DependsOn: []string{"x", "a"}},
-						{Name: "cycle_start", DependsOn: []string{"y"}},
-						{Name: "cycle_mid", DependsOn: []string{"cycle_start"}},
-						{Name: "cycle_end", DependsOn: []string{"cycle_mid", "cycle_start"}},
 					},
 				}},
 			},
+		},
+		{
+			name: "circular dependency",
+			schema: &Schema{
+				Tables: []Table{{
+					Name: "issues",
+					SubTables: []SubTable{
+						{Name: "a", Root: true},
+						{Name: "cycle_start", DependsOn: []string{"a", "cycle_end"}},
+						{Name: "cycle_mid", DependsOn: []string{"cycle_start"}},
+						{Name: "cycle_end", DependsOn: []string{"cycle_mid"}},
+					},
+				}},
+			},
+			wantErr: "circular dependency",
 		},
 		{
 			name: "self-referencing dependency",
