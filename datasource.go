@@ -55,7 +55,7 @@ func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallR
 }
 
 func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
-	path := strings.TrimPrefix(req.Path, BaseResourcePath)
+	path := strings.TrimLeft(strings.TrimPrefix(req.Path, BaseResourcePath), "/")
 	headers := extractHeaders(req)
 
 	var data []byte
