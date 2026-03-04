@@ -1,8 +1,9 @@
 // Package schemas provides schema discovery for Grafana data source plugins.
 //
-// Plugins implement [SchemaHandler] (or the higher-level [TableSchemaProvider])
-// and wrap it with [NewSchemaDatasource] to expose table, column, and sub-table
-// metadata via CallResource. Consumers fetch metadata with [FetchSchema].
+// Plugins implement handler interfaces ([SchemaHandler], [TablesHandler],
+// [ColumnsHandler], etc.) and wire them into [NewSchemaDatasource] to expose
+// table, column, and table parameter metadata via CallResource. Consumers fetch
+// metadata with [Client].
 package schemas
 
 import (
@@ -11,10 +12,6 @@ import (
 	apidata "github.com/grafana/grafana-plugin-sdk-go/experimental/apis/datasource/v0alpha1"
 )
 
-// SchemaHandler is the interface data sources implement to serve schema
-// requests. If not configured, requests to [SchemaResourcePath] return
-// 501 Not Implemented. See [SchemaHandlerFunc] for an adapter and
-// [NewSchemaHandlerFromProvider] for the higher-level alternative.
 type SchemaHandler interface {
 	Schema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error)
 }
@@ -35,34 +32,6 @@ type ColumnValuesHandler interface {
 	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
-// SchemaHandlerFunc adapts an ordinary function into a [SchemaHandler].
-func SchemaHandlerFunc(fn func(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error)) SchemaHandler {
-	return &schemaHandlerFunc{fn: fn}
-}
-
-type schemaHandlerFunc struct {
-	fn func(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error)
-}
-
-func (f *schemaHandlerFunc) Schema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error) {
-	return f.fn(ctx, req)
-}
-
-// SubTableSeparator is used to build composite keys that reference a
-// sub-table within a parent table (e.g. "issues_organization").
-//
-// NOTE: sub-table and table names may themselves contain underscores,
-// making this separator ambiguous. A future version will adopt a safer
-// delimiter (e.g. "/" or a structured identifier) once the protocol is
-// versioned.
-const SubTableSeparator = "_"
-
-// SchemaRequest is the JSON body sent to the schema resource endpoint.
-// Which fields are required depends on [SchemaRequest.Type]:
-//
-//   - "columns" requires [SchemaRequest.Tables].
-//   - "values" requires [SchemaRequest.Columns].
-//   - "subTableValues" requires [SchemaRequest.SubTables].
 type SchemaRequest struct {
 	Headers map[string]string `json:"-"`
 }
