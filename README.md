@@ -3,178 +3,283 @@
 > [!CAUTION]
 > This repository is experimental and in progress. Do not use this module.
 
-A wrapper for Grafana data source plugins that adds **schema discovery** via `CallResource`. Plugins implement the `SchemaHandler` interface; consumers call the `schema` resource path to retrieve table/column metadata.
+A wrapper for Grafana data source plugins that adds **schema discovery** via `CallResource`. Plugins implement `SchemaHandler` (or the higher-level `TableSchemaProvider`); consumers call the `schema` resource path to retrieve table, column, sub-table, and value metadata.
 
-## Behaviour
+## Overview
 
-- **Resource path:** `POST` to path `schema` (`schemas.SchemaResourcePath`) with a JSON body. If the plugin implements `schemas.SchemaHandler`, the wrapper calls it and returns a `SchemaResponse` as JSON. Otherwise it returns **501 Not Implemented**.
-- **Other resources:** Any other `CallResource` path is forwarded to the wrapped `CallResourceHandler`. If no next handler is set, returns **404**.
+- **Resource path:** `POST` to `schema` (`SchemaResourcePath`) with a JSON body containing a `type` field.
+- **Schema available:** the wrapper calls the configured `SchemaHandler` and returns a `SchemaResponse` as JSON.
+- **Schema not configured:** returns **501 Not Implemented**.
+- **Other paths:** forwarded to the wrapped `CallResourceHandler`, or **404** if none is set.
 
-## Usage
+## Plugin integration
 
-### 1. Implement `SchemaHandler`
+### Option A – TableSchemaProvider (recommended)
 
-Create a type that satisfies the `SchemaHandler` interface. The `Schema` method receives a `SchemaRequest` and should return the appropriate response based on `req.Type`:
+Implement `TableSchemaProvider` to handle each request type in a separate method. The library routes requests automatically via `NewSchemaHandlerFromProvider`:
 
 ```go
-package myplugin
-
-import (
-	"context"
-
-	schemas "github.com/grafana/schemads"
-)
-
-type MySchemaHandler struct {
-	// datasource-specific fields (client, config, etc.)
-}
-
-func (h *MySchemaHandler) Schema(ctx context.Context, req *schemas.SchemaRequest) (*schemas.SchemaResponse, error) {
-	switch req.Type {
-	case "tables":
-		return &schemas.SchemaResponse{
-			Tables: []string{"users", "orders"},
-		}, nil
-
-	case "columns":
-		columns := make(map[string][]schemas.Column)
-		for _, table := range req.Tables {
-			columns[table] = getColumnsForTable(table)
-		}
-		return &schemas.SchemaResponse{Columns: columns}, nil
-
-	case "values":
-		return &schemas.SchemaResponse{
-			ColumnValues: make(map[string][]string),
-		}, nil
-
-	default: // full schema
-		return &schemas.SchemaResponse{
-			FullSchema: &schemas.Schema{
-				Tables: []schemas.Table{
-					{
-						Name: "users",
-						Columns: []schemas.Column{
-							{Name: "id", Type: schemas.ColumnTypeNumber},
-							{Name: "name", Type: schemas.ColumnTypeString},
-							{Name: "created_at", Type: schemas.ColumnTypeDatetime},
-						},
-					},
-				},
-			},
-		}, nil
-	}
+type TableSchemaProvider interface {
+    FullSchema(ctx context.Context) (*schemas.Schema, error)
+    Tables(ctx context.Context) ([]string, map[string][]schemas.SubTable, error)
+    Columns(ctx context.Context, tables []string) (map[string][]schemas.Column, error)
+    ColumnValues(ctx context.Context, columns []schemas.ColumnValuesRequest) (map[string][]string, error)
+    SubTableValues(ctx context.Context, subTables []schemas.SubTableValuesRequest) (map[string][]string, error)
 }
 ```
 
-### 2. Wire into the plugin
-
-Use `NewSchemaDatasource` to wrap your schema handler. The returned `*SchemaDatasource` implements `backend.CallResourceHandler` — embed it in your instance and delegate `CallResource` to it:
+Example:
 
 ```go
-package plugin
+type MyProvider struct{}
 
-import (
-	"context"
-
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
-	schemas "github.com/grafana/schemads"
-)
-
-type MyInstance struct {
-	// your datasource fields
-	*schemas.SchemaDatasource
+func (p *MyProvider) FullSchema(ctx context.Context) (*schemas.Schema, error) {
+    return &schemas.Schema{
+        Tables: []schemas.Table{{
+            Name: "issues",
+            SubTables: []schemas.SubTable{
+                {Name: "organization", Root: true, Required: true},
+                {Name: "repository", DependsOn: []string{"organization"}, Required: true},
+            },
+            Columns: []schemas.Column{
+                {Name: "id", Type: schemas.ColumnTypeInt64},
+                {Name: "title", Type: schemas.ColumnTypeString},
+            },
+        }},
+    }, nil
 }
 
-func (m *MyInstance) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
-	return m.SchemaDatasource.CallResource(ctx, req, sender)
+func (p *MyProvider) Tables(ctx context.Context) ([]string, map[string][]schemas.SubTable, error) {
+    return []string{"issues"}, map[string][]schemas.SubTable{
+        "issues": {
+            {Name: "organization", Root: true, Required: true},
+            {Name: "repository", DependsOn: []string{"organization"}, Required: true},
+        },
+    }, nil
+}
+
+func (p *MyProvider) Columns(ctx context.Context, tables []string) (map[string][]schemas.Column, error) {
+    // return columns for the requested tables
+}
+
+func (p *MyProvider) ColumnValues(ctx context.Context, columns []schemas.ColumnValuesRequest) (map[string][]string, error) {
+    return map[string][]string{}, nil
+}
+
+func (p *MyProvider) SubTableValues(ctx context.Context, subTables []schemas.SubTableValuesRequest) (map[string][]string, error) {
+    result := make(map[string][]string)
+    for _, st := range subTables {
+        key := st.Table + "_" + st.SubTable
+        result[key] = []string{"value1", "value2"}
+    }
+    return result, nil
+}
+
+// Convert to SchemaHandler:
+// handler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
+```
+
+### Option B – Direct SchemaHandler
+
+For full control, implement `SchemaHandler` directly:
+
+```go
+func (h *MyHandler) Schema(ctx context.Context, req *schemas.SchemaRequest) (*schemas.SchemaResponse, error) {
+    switch req.Type {
+    case schemas.RequestTypeFullSchema:
+        // return full schema
+    case schemas.RequestTypeTables:
+        // return tables and sub-tables
+    case schemas.RequestTypeColumns:
+        // return columns for req.Tables
+    case schemas.RequestTypeValues:
+        // return values for req.Columns
+    case schemas.RequestTypeSubTableValues:
+        // return values for req.SubTables
+    }
+    return nil, fmt.Errorf("unsupported request type: %s", req.Type)
+}
+```
+
+You can also use `SchemaHandlerFunc` to wrap a plain function:
+
+```go
+handler := schemas.SchemaHandlerFunc(func(ctx context.Context, req *schemas.SchemaRequest) (*schemas.SchemaResponse, error) {
+    // ...
+})
+```
+
+### Wiring into the plugin
+
+`NewSchemaDatasource` returns a `*SchemaDatasource` that implements `backend.CallResourceHandler`:
+
+```go
+func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+    handler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
+    // Pass an existing CallResourceHandler as next to forward non-schema
+    // resource calls, or nil if not needed.
+    schemaDs := schemas.NewSchemaDatasource(handler, nil)
+    return &MyInstance{SchemaDatasource: schemaDs}, nil
+}
+```
+
+### Adding schema support to an existing data source
+
+If your plugin already implements `backend.CallResourceHandler` (e.g. for health checks, autocomplete, or custom endpoints), pass it as the `next` argument. Schema requests are intercepted; everything else is forwarded to your existing handler unchanged:
+
+```go
+type MyDatasource struct {
+    schemas.SchemaDatasource
 }
 
 func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	ds := createMyDatasource(ctx, settings) // your plugin-specific setup
-	handler := &MySchemaHandler{/* ... */}
+    ds := &MyDatasource{}
 
-	// Pass an existing CallResourceHandler as the second argument to
-	// forward non-schema resource calls, or nil if not needed.
-	schemaDs := schemas.NewSchemaDatasource(handler, nil)
+    schemaHandler := schemas.NewSchemaHandlerFromProvider(&MyProvider{})
+    // Pass ds as next — any non-schema resource calls continue to
+    // be handled by MyDatasource.handleCustomResource.
+    ds.SchemaDatasource = *schemas.NewSchemaDatasource(schemaHandler, backend.CallResourceHandlerFunc(ds.handleCustomResource))
 
-	return &MyInstance{
-		SchemaDatasource: schemaDs,
-		// ...
-	}, nil
+    return ds, nil
+}
+
+func (ds *MyDatasource) handleCustomResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+    switch req.Path {
+    case "custom-endpoint":
+        return sender.Send(&backend.CallResourceResponse{
+            Status: 200,
+            Body:   []byte(`{"ok": true}`),
+        })
+    default:
+        return sender.Send(&backend.CallResourceResponse{
+            Status: 404,
+            Body:   []byte("not found"),
+        })
+    }
 }
 ```
 
-### Without schema support
+With this setup:
 
-Pass `nil` as the schema handler. Requests to the schema path return **501 Not Implemented**; other paths are forwarded to the next handler.
+- `POST /schema` is handled by the schema handler.
+- All other paths (e.g. `/custom-endpoint`) are forwarded to `handleCustomResource`.
+
+To opt out of schema support, pass `nil` as the handler — schema requests return 501 and everything else is forwarded:
 
 ```go
-schemaDs := schemas.NewSchemaDatasource(nil, existingCallResourceHandler)
+schemaDs := schemas.NewSchemaDatasource(nil, existingHandler)
 ```
 
-## Request & response format
+## Client usage
 
-### Request body
+`FetchSchema` sends a `SchemaRequest` over HTTP and returns the decoded `SchemaResponse`. Both `httpClient` and `schemaURL` are required. Headers on `SchemaRequest.Headers` are forwarded.
 
-`POST` to `CallResource` with path `schemas.SchemaResourcePath` (`"schema"`):
-
-```json
-{
-  "type": "columns",
-  "tables": ["users", "orders"],
-  "columns": []
-}
+```go
+resp, err := schemas.FetchSchema(ctx, httpClient, schemaURL, &schemas.SchemaRequest{
+    Type:   schemas.RequestTypeTables,
+})
+// resp.Tables    – []string
+// resp.SubTables – map[string][]SubTable
 ```
 
-| `type`            | Description                 | Required fields |
-| ----------------- | --------------------------- | --------------- |
-| `""` (or omitted) | Full schema                 | None            |
-| `"tables"`        | List of table names         | None            |
-| `"columns"`       | Columns for specific tables | `tables`        |
-| `"values"`        | Values for specific columns | `columns`       |
+Fetching sub-table values incrementally:
 
-### Response body
-
-```json
-{
-  "fullSchema": {
-    "tables": [
-      {
-        "name": "users",
-        "columns": [
-          { "name": "id", "type": "number" },
-          { "name": "name", "type": "string" },
-          { "name": "created_at", "type": "datetime" }
-        ],
-        "subTables": []
-      }
-    ],
-    "functions": [],
-    "subTableValues": {}
-  },
-  "tables": ["users", "orders"],
-  "columns": {
-    "users": [{ "name": "id", "type": "number" }]
-  },
-  "columnValues": {}
-}
+```go
+resp, err := schemas.FetchSchema(ctx, httpClient, schemaURL, &schemas.SchemaRequest{
+    Type: schemas.RequestTypeSubTableValues,
+    SubTables: []schemas.SubTableValuesRequest{{
+        Table:            "issues",
+        SubTable:         "repository",
+        DependencyValues: map[string]string{"organization": "grafana"},
+    }},
+})
+// resp.SubTableValues["issues_repository"] – []string
 ```
 
-Which fields are populated depends on `type` in the request. Column types are one of `"number"`, `"string"`, or `"datetime"`.
+## Sub-tables
 
-### Error responses
+Sub-tables model hierarchical scoping parameters that consumers resolve before querying a table (e.g. a GitHub data source requires selecting an **organization** and then a **repository** before querying **issues**).
 
-Errors are returned as JSON with an HTTP status code:
+### Definition
 
-| Status | Meaning                                                                 |
-| ------ | ----------------------------------------------------------------------- |
-| `400`  | Invalid request (malformed JSON, unknown type, missing required fields) |
-| `500`  | Handler returned an error                                               |
-| `501`  | No `SchemaHandler` configured                                           |
+Each `SubTable` has:
 
-```json
-{ "error": "tables must be specified when requesting columns" }
-```
+| Field       | Type       | Description                                                 |
+| ----------- | ---------- | ----------------------------------------------------------- |
+| `Name`      | `string`   | Unique name within the parent table.                        |
+| `DependsOn` | `[]string` | Sibling sub-tables whose values must be selected first.     |
+| `Root`      | `bool`     | Entry point with no dependencies. At least one is required. |
+| `Required`  | `bool`     | Must be resolved before the table can be queried.           |
+
+### Validation
+
+`ValidateSchema` is called automatically for `fullSchema` responses and enforces:
+
+1. **Unique names** – no two sub-tables in a table share a name.
+2. **Valid references** – every `DependsOn` entry names a sibling sub-table.
+3. **Acyclic graph** – the dependency graph has no cycles.
+4. **Root rules** – at least one sub-table is `Root` and root sub-tables have no dependencies.
+5. **Required chain** – a required sub-table may only depend on other required sub-tables.
+6. **SubTableValues integrity** – `Schema.SubTableValues` keys reference existing tables and root sub-tables only. Non-root sub-table values depend on ancestor selections and must be fetched incrementally via a `"subTableValues"` request with `DependencyValues`.
+
+Call `ValidateSchema` directly to validate schemas you construct manually.
+
+### Composite keys
+
+Sub-table values in `SchemaResponse.SubTableValues` use composite keys of the form `table_subTable` — e.g. `"issues_organization"`.
+
+> **Note:** table and sub-table names may contain underscores, making this separator ambiguous. A future version will adopt a safer delimiter once the protocol is versioned.
+
+## Request types
+
+| `type`             | Constant                    | Required fields | Response fields       |
+| ------------------ | --------------------------- | --------------- | --------------------- |
+| `"fullSchema"`     | `RequestTypeFullSchema`     | –               | `FullSchema`          |
+| `"tables"`         | `RequestTypeTables`         | –               | `Tables`, `SubTables` |
+| `"columns"`        | `RequestTypeColumns`        | `Tables`        | `Columns`             |
+| `"values"`         | `RequestTypeValues`         | `Columns`       | `ColumnValues`        |
+| `"subTableValues"` | `RequestTypeSubTableValues` | `SubTables`     | `SubTableValues`      |
+
+`ValidateRequest` is called automatically before dispatching and rejects unknown types or missing required fields.
+
+## Column types
+
+Types are aligned with go-mysql-server's type system:
+
+| Category   | Constants                                                                |
+| ---------- | ------------------------------------------------------------------------ |
+| Boolean    | `boolean`                                                                |
+| Integers   | `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64` |
+| Float      | `float32`, `float64`                                                     |
+| Decimal    | `decimal` (use `Column.Precision` / `Column.Scale`)                      |
+| String     | `string`                                                                 |
+| Date/Time  | `date`, `datetime`, `timestamp`, `time`, `year`                          |
+| Structured | `json`, `enum` (use `Column.Values`), `set` (use `Column.Values`)        |
+| Binary     | `blob`, `bit` (use `Column.Size`, 1-64)                                  |
+
+## Operators
+
+Columns declare which filter operations they support via `Column.Operators`:
+
+| Constant                     | Value  |
+| ---------------------------- | ------ |
+| `OperatorEquals`             | `==`   |
+| `OperatorNotEquals`          | `!=`   |
+| `OperatorGreaterThan`        | `>`    |
+| `OperatorGreaterThanOrEqual` | `>=`   |
+| `OperatorLessThan`           | `<`    |
+| `OperatorLessThanOrEqual`    | `<=`   |
+| `OperatorLike`               | `like` |
+| `OperatorIn`                 | `in`   |
+
+## Error handling
+
+Errors are returned as JSON `{"error": "..."}` with an HTTP status:
+
+| Status | Meaning                                             |
+| ------ | --------------------------------------------------- |
+| `400`  | Invalid request (unknown type, missing fields, etc) |
+| `500`  | Handler error or schema validation failure          |
+| `501`  | No `SchemaHandler` configured                       |
+
+Partial failures can be reported via `SchemaResponse.Errors` (keyed by table or column name).

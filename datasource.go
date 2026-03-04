@@ -3,25 +3,24 @@ package schemas
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-// SchemaDatasource wraps a Grafana data source to add support for schema requests
-// (full schema, tables, columns, column values) via resource calls.
+// SchemaDatasource is a [backend.CallResourceHandler] that intercepts requests
+// to [SchemaResourcePath] and delegates them to a [SchemaHandler]. All other
+// resource paths are forwarded to CallResourceHandler (if set) or return 404.
 type SchemaDatasource struct {
 	// SchemaHandler provides tabular information. If nil, requests to
 	// SchemaResourcePath return 501 Not Implemented.
-	SchemaHandler SchemaHandler
-
-	// CallResourceHandler is the next handler for resource calls. Set by
-	// NewSchemaDatasource(handler, next). When a request is not for the schema
-	// path, it is delegated here. Can be nil.
+	SchemaHandler       SchemaHandler
 	CallResourceHandler backend.CallResourceHandler
 }
 
+// NewSchemaDatasource creates a [SchemaDatasource]. Pass nil for
+// schemaHandler to return 501 for schema requests. Pass nil for next to
+// return 404 for non-schema paths.
 func NewSchemaDatasource(schemaHandler SchemaHandler, next backend.CallResourceHandler) *SchemaDatasource {
 	return &SchemaDatasource{
 		SchemaHandler:       schemaHandler,
@@ -29,6 +28,9 @@ func NewSchemaDatasource(schemaHandler SchemaHandler, next backend.CallResourceH
 	}
 }
 
+// CallResource implements [backend.CallResourceHandler]. Requests whose path
+// equals [SchemaResourcePath] are handled internally; everything else is
+// forwarded to CallResourceHandler.
 func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	if req != nil && req.Path == SchemaResourcePath {
 		return ds.handleSchemaResource(ctx, req, sender)
@@ -50,13 +52,18 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 	if err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, "invalid request: "+err.Error())
 	}
-	if err := validateRequest(tableReq); err != nil {
+	if err := ValidateRequest(tableReq); err != nil {
 		return sendSchemaError(sender, http.StatusBadRequest, err.Error())
 	}
 
 	resp, err := ds.SchemaHandler.Schema(ctx, tableReq)
 	if err != nil {
 		return sendSchemaError(sender, http.StatusInternalServerError, err.Error())
+	}
+	if tableReq.Type == RequestTypeFullSchema && resp != nil {
+		if err := ValidateSchema(resp.FullSchema); err != nil {
+			return sendSchemaError(sender, http.StatusInternalServerError, "schema validation failed: "+err.Error())
+		}
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -69,22 +76,4 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		},
 		Body: data,
 	})
-}
-
-func validateRequest(req *SchemaRequest) error {
-	if req == nil {
-		return fmt.Errorf("schema request must not be nil")
-	}
-	if req.Type != "" && req.Type != "tables" && req.Type != "columns" && req.Type != "values" {
-		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values")
-	}
-	if req.Type == "columns" && len(req.Tables) == 0 {
-		return fmt.Errorf("tables must be specified when requesting columns")
-	}
-	if req.Type == "values" {
-		if len(req.Columns) == 0 {
-			return fmt.Errorf("columns must be specified when requesting values")
-		}
-	}
-	return nil
 }
