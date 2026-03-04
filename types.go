@@ -106,9 +106,9 @@ type SchemaResponse struct {
 }
 
 type TablesResponse struct {
-	Tables    []string          `json:"tables"`
-	SubTables []SubTable        `json:"subTables,omitempty"`
-	Errors    map[string]string `json:"errors,omitempty"`
+	Tables    []string              `json:"tables"`
+	SubTables map[string][]SubTable `json:"subTables,omitempty"`
+	Errors    map[string]string     `json:"errors,omitempty"`
 }
 
 type ColumnsResponse struct {
