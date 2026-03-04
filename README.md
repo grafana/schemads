@@ -49,11 +49,11 @@ func NewInstance(ctx context.Context, settings backend.DataSourceInstanceSetting
     ds := &MyDatasource{}
 
     schemaDs := schemas.NewSchemaDatasource(
-        ds,   // SchemaHandler
-        ds,   // TablesHandler
-        ds,   // ColumnsHandler
-        ds,   // TableParameterValuesHandler
-        ds,   // ColumnValuesHandler
+        schemaHandler,
+        tablesHandler,
+        columnsHandler,
+        tableParameterValuesHandler,
+        columnValuesHandler
         nil,  // next CallResourceHandler (or an existing handler)
     )
     return &MyInstance{SchemaDatasource: schemaDs}, nil

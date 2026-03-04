@@ -66,8 +66,7 @@ type TableParameterValuesRequest struct {
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`
 }
 
-// SchemaResponse is the JSON body returned by the schema resource endpoint.
-// Which fields are populated depends on the [SchemaRequest.Type] that was sent.
+// SchemaResponse is the JSON body returned by the fullSchema endpoint.
 type SchemaResponse struct {
 	// FullSchema is populated for "fullSchema" requests.
 	FullSchema *Schema `json:"fullSchema,omitempty"`

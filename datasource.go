@@ -10,11 +10,11 @@ import (
 )
 
 // SchemaDatasource is a [backend.CallResourceHandler] that intercepts requests
-// to [SchemaResourcePath] and delegates them to a [SchemaHandler]. All other
-// resource paths are forwarded to CallResourceHandler (if set) or return 404.
+// under [BaseResourcePath] and delegates them to the configured handlers. All
+// other resource paths are forwarded to CallResourceHandler (if set) or return 404.
 type SchemaDatasource struct {
-	// SchemaHandler provides tabular information. If nil, requests to
-	// SchemaResourcePath return 501 Not Implemented.
+	// SchemaHandler serves fullSchema requests. If nil, those requests
+	// return 501 Not Implemented.
 	SchemaHandler               SchemaHandler
 	TablesHandler               TablesHandler
 	ColumnsHandler              ColumnsHandler
@@ -38,7 +38,7 @@ func NewSchemaDatasource(schemaHandler SchemaHandler, tablesHandler TablesHandle
 }
 
 // CallResource implements [backend.CallResourceHandler]. Requests whose path
-// equals [SchemaResourcePath] are handled internally; everything else is
+// starts with [BaseResourcePath] are handled internally; everything else is
 // forwarded to CallResourceHandler.
 func (ds *SchemaDatasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
 	if req != nil && strings.HasPrefix(req.Path, BaseResourcePath) {

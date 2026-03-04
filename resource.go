@@ -13,13 +13,13 @@ const (
 	// RequestTypeTables returns table names and their table parameter definitions.
 	RequestTypeTables string = "tables"
 	// RequestTypeColumns returns columns for the tables listed in
-	// [SchemaRequest.Tables].
+	// [ColumnsRequest.Tables].
 	RequestTypeColumns string = "columns"
-	// RequestTypeValues returns possible values for the columns listed in
-	// [SchemaRequest.Columns].
+	// RequestTypeColumnValues returns possible values for the columns listed in
+	// [ColumnValuesRequest.Columns].
 	RequestTypeColumnValues string = "columnValues"
-	// RequestTypeTableParameterValues returns possible values for the table parameters
-	// listed in [SchemaRequest.TableParameters].
+	// RequestTypeTableParameterValues returns possible values for table parameters
+	// identified by [TableParameterValuesRequest].
 	RequestTypeTableParameterValues string = "tableParameterValues"
 )
 
