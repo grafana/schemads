@@ -7,6 +7,8 @@ package schemas
 
 import (
 	"context"
+
+	apidata "github.com/grafana/grafana-plugin-sdk-go/experimental/apis/datasource/v0alpha1"
 )
 
 // SchemaHandler is the interface data sources implement to serve schema
@@ -15,6 +17,22 @@ import (
 // [NewSchemaHandlerFromProvider] for the higher-level alternative.
 type SchemaHandler interface {
 	Schema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error)
+}
+
+type TablesHandler interface {
+	Tables(ctx context.Context, req *TablesRequest) (*TablesResponse, error)
+}
+
+type ColumnsHandler interface {
+	Columns(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error)
+}
+
+type TableParameterValuesHandler interface {
+	TableParameterValues(ctx context.Context, req *TableParameterValuesRequest) (*TableParametersValuesResponse, error)
+}
+
+type ColumnValuesHandler interface {
+	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
 // SchemaHandlerFunc adapts an ordinary function into a [SchemaHandler].
@@ -29,25 +47,6 @@ type schemaHandlerFunc struct {
 func (f *schemaHandlerFunc) Schema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error) {
 	return f.fn(ctx, req)
 }
-
-type RequestType = string
-
-const (
-	// RequestTypeFullSchema returns the complete schema (tables, columns,
-	// sub-tables, functions, and sub-table values).
-	RequestTypeFullSchema RequestType = "fullSchema"
-	// RequestTypeTables returns table names and their sub-table definitions.
-	RequestTypeTables RequestType = "tables"
-	// RequestTypeColumns returns columns for the tables listed in
-	// [SchemaRequest.Tables].
-	RequestTypeColumns RequestType = "columns"
-	// RequestTypeValues returns possible values for the columns listed in
-	// [SchemaRequest.Columns].
-	RequestTypeValues RequestType = "values"
-	// RequestTypeSubTableValues returns possible values for the sub-tables
-	// listed in [SchemaRequest.SubTables].
-	RequestTypeSubTableValues RequestType = "subTableValues"
-)
 
 // SubTableSeparator is used to build composite keys that reference a
 // sub-table within a parent table (e.g. "issues_organization").
@@ -65,28 +64,36 @@ const SubTableSeparator = "_"
 //   - "values" requires [SchemaRequest.Columns].
 //   - "subTableValues" requires [SchemaRequest.SubTables].
 type SchemaRequest struct {
-	Headers   map[string]string       `json:"-"`
-	Type      RequestType             `json:"type"`
-	Tables    []string                `json:"tables,omitempty"`
-	Columns   []ColumnValuesRequest   `json:"columns,omitempty"`
-	SubTables []SubTableValuesRequest `json:"subTables,omitempty"`
+	Headers map[string]string `json:"-"`
+}
+
+type TablesRequest struct {
+	Headers map[string]string `json:"-"`
+}
+
+type ColumnsRequest struct {
+	Headers map[string]string `json:"-"`
+	Tables  []string          `json:"tables"`
 }
 
 // ColumnValuesRequest identifies a column whose possible values are being
 // requested, along with optional parameters to scope the result.
 type ColumnValuesRequest struct {
-	Table      string            `json:"table"`
-	Columns    []string          `json:"columns,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"`
+	Headers         map[string]string `json:"-"`
+	Table           string            `json:"table"`
+	Columns         []string          `json:"columns,omitempty"`
+	TableParameters map[string]string `json:"tableParameters,omitempty"`
+	TimeRange       apidata.TimeRange `json:"timeRange"`
 }
 
-// SubTableValuesRequest identifies a sub-table within a parent table and
+// TableParameterValuesRequest identifies a table and
 // provides dependency context (selected ancestor values) for fetching its
 // enumerable values. Table is required because the same sub-table name may
 // have different semantics across parent tables.
-type SubTableValuesRequest struct {
+type TableParameterValuesRequest struct {
+	Headers          map[string]string `json:"-"`
 	Table            string            `json:"table"`
-	SubTable         string            `json:"subTable"`
+	TableParameter   string            `json:"tableParameter,omitempty"`
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`
 }
 
@@ -95,19 +102,28 @@ type SubTableValuesRequest struct {
 type SchemaResponse struct {
 	// FullSchema is populated for "fullSchema" requests.
 	FullSchema *Schema `json:"fullSchema,omitempty"`
-	// Tables is populated for "tables" requests.
-	Tables []string `json:"tables,omitempty"`
-	// Columns is populated for "columns" requests (table name -> columns).
-	Columns map[string][]Column `json:"columns,omitempty"`
-	// ColumnValues is populated for "values" requests (column key -> values).
-	ColumnValues map[string][]string `json:"columnValues,omitempty"`
-	// SubTables is populated alongside Tables for "tables" requests,
-	// mapping table names to their sub-table definitions.
-	SubTables map[string][]SubTable `json:"subTables,omitempty"`
-	// SubTableValues is populated for "subTableValues" requests.
-	SubTableValues map[string][]string `json:"subTableValues,omitempty"`
-	// Errors reports per-table or per-column errors for partial failures.
-	Errors map[string]string `json:"errors,omitempty"`
+	Errors     string  `json:"error,omitempty"`
+}
+
+type TablesResponse struct {
+	Tables    []string          `json:"tables"`
+	SubTables []SubTable        `json:"subTables,omitempty"`
+	Errors    map[string]string `json:"errors,omitempty"`
+}
+
+type ColumnsResponse struct {
+	Columns map[string][]Column `json:"columns"`
+	Errors  map[string]string   `json:"errors,omitempty"`
+}
+
+type ColumnValuesResponse struct {
+	ColumnValues map[string][]string `json:"columnValues"`
+	Errors       map[string]string   `json:"errors,omitempty"`
+}
+
+type TableParametersValuesResponse struct {
+	TableParameterValues map[string][]string `json:"tableParameterValues"`
+	Errors               map[string]string   `json:"errors,omitempty"`
 }
 
 // Schema is the complete tabular schema returned by a "fullSchema" request.

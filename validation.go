@@ -4,34 +4,6 @@ import (
 	"fmt"
 )
 
-// ValidateRequest checks that a SchemaRequest is well-formed before it is
-// dispatched to a handler. It enforces that the request type is recognised
-// and that any fields required by that type are present.
-func ValidateRequest(req *SchemaRequest) error {
-	if req == nil {
-		return fmt.Errorf("schema request must not be nil")
-	}
-	switch req.Type {
-	case RequestTypeFullSchema, RequestTypeTables:
-		// no extra fields required
-	case RequestTypeColumns:
-		if len(req.Tables) == 0 {
-			return fmt.Errorf("tables must be specified when requesting columns")
-		}
-	case RequestTypeValues:
-		if len(req.Columns) == 0 {
-			return fmt.Errorf("columns must be specified when requesting values")
-		}
-	case RequestTypeSubTableValues:
-		if len(req.SubTables) == 0 {
-			return fmt.Errorf("subTables must be specified when requesting sub-table values")
-		}
-	default:
-		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values, subTableValues")
-	}
-	return nil
-}
-
 // ValidateSchema validates the structural integrity of a Schema's sub-table
 // definitions. It is called automatically when a fullSchema response is
 // returned and may also be called by consumers who construct schemas manually.
