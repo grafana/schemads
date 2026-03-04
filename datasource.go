@@ -70,6 +70,9 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if err != nil {
 			return err
 		}
+		if err := ValidateSchema(response.FullSchema); err != nil {
+			return sendSchemaError(sender, http.StatusInternalServerError, "schema validation failed: "+err.Error())
+		}
 		data, err = json.Marshal(response)
 		if err != nil {
 			return err
