@@ -8,9 +8,9 @@ const BaseResourcePath = "abstractionSchema"
 
 const (
 	// RequestTypeFullSchema returns the complete schema (tables, columns,
-	// sub-tables, functions, and sub-table values).
+	// table parameters, functions, and table parameter values).
 	RequestTypeFullSchema string = "fullSchema"
-	// RequestTypeTables returns table names and their sub-table definitions.
+	// RequestTypeTables returns table names and their table parameter definitions.
 	RequestTypeTables string = "tables"
 	// RequestTypeColumns returns columns for the tables listed in
 	// [SchemaRequest.Tables].
@@ -18,8 +18,8 @@ const (
 	// RequestTypeValues returns possible values for the columns listed in
 	// [SchemaRequest.Columns].
 	RequestTypeColumnValues string = "columnValues"
-	// RequestTypeSubTableValues returns possible values for the sub-tables
-	// listed in [SchemaRequest.SubTables].
+	// RequestTypeTableParameterValues returns possible values for the table parameters
+	// listed in [SchemaRequest.TableParameters].
 	RequestTypeTableParameterValues string = "tableParameterValues"
 )
 

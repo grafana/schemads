@@ -88,7 +88,7 @@ type ColumnValuesRequest struct {
 
 // TableParameterValuesRequest identifies a table and
 // provides dependency context (selected ancestor values) for fetching its
-// enumerable values. Table is required because the same sub-table name may
+// enumerable values. Table is required because the same table parameter name may
 // have different semantics across parent tables.
 type TableParameterValuesRequest struct {
 	Headers          map[string]string `json:"-"`
@@ -106,9 +106,9 @@ type SchemaResponse struct {
 }
 
 type TablesResponse struct {
-	Tables    []string              `json:"tables"`
-	SubTables map[string][]SubTable `json:"subTables,omitempty"`
-	Errors    map[string]string     `json:"errors,omitempty"`
+	Tables          []string                    `json:"tables"`
+	TableParameters map[string][]TableParameter `json:"tableParameters,omitempty"`
+	Errors          map[string]string           `json:"errors,omitempty"`
 }
 
 type ColumnsResponse struct {
@@ -130,29 +130,29 @@ type TableParametersValuesResponse struct {
 type Schema struct {
 	Tables    []Table  `json:"tables,omitempty"`
 	Functions []string `json:"functions,omitempty"`
-	// SubTableValues provides pre-populated values for root sub-tables only
-	// (table name -> sub-table name -> values). Non-root sub-table values
+	// TableParameterValues provides pre-populated values for root table parameters only
+	// (table name -> table parameter name -> values). Non-root table parameter values
 	// depend on ancestor selections and must be fetched incrementally via
-	// a "subTableValues" request with [SubTableValuesRequest.DependencyValues].
-	SubTableValues map[string]map[string][]string `json:"subTableValues,omitempty"`
+	// a "tableParameterValues" request with [TableParameterValuesRequest.DependencyValues].
+	TableParameterValues map[string]map[string][]string `json:"tableParameterValues,omitempty"`
 }
 
-// Table describes a single table, its columns, and optional sub-tables.
+// Table describes a single table, its columns, and optional table parameters.
 type Table struct {
-	Name      string     `json:"name"`
-	SubTables []SubTable `json:"subTables,omitempty"`
-	Columns   []Column   `json:"columns,omitempty"`
+	Name            string           `json:"name"`
+	TableParameters []TableParameter `json:"tableParameters,omitempty"`
+	Columns         []Column         `json:"columns,omitempty"`
 }
 
-// SubTable describes a hierarchical sub-table within a parent [Table].
-// Sub-tables model scoping parameters that must be resolved before the
+// TableParameter describes a hierarchical table parameter within a parent [Table].
+// Table parameters model scoping parameters that must be resolved before the
 // table can be queried (e.g. organization -> repository for a GitHub
-// data source). Root sub-tables have no dependencies and their values
-// may be pre-populated in [Schema.SubTableValues]. Non-root sub-table
-// values depend on ancestor selections and must be fetched via a
-// "subTableValues" request. See [ValidateSchema] for the full set of
-// invariants enforced on sub-table definitions.
-type SubTable struct {
+// data source). Root table parameters have no dependencies and their values
+// may be pre-populated in [Schema.TableParameterValues]. Non-root table
+// parameter values depend on ancestor selections and must be fetched via a
+// "tableParameterValues" request. See [ValidateSchema] for the full set of
+// invariants enforced on table parameter definitions.
+type TableParameter struct {
 	Name      string   `json:"name"`
 	DependsOn []string `json:"dependsOn,omitempty"`
 	Root      bool     `json:"root"`
