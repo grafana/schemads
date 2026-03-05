@@ -13,14 +13,16 @@ import (
 // under [BaseResourcePath] and delegates them to the configured handlers. All
 // other resource paths are forwarded to CallResourceHandler (if set) or return 404.
 type SchemaDatasource struct {
-	// SchemaHandler serves fullSchema requests. If nil, those requests
+	// The Schema handlers serve the different schema endpoints. If nil, those requests
 	// return 501 Not Implemented.
 	SchemaHandler               SchemaHandler
 	TablesHandler               TablesHandler
 	ColumnsHandler              ColumnsHandler
 	TableParameterValuesHandler TableParameterValuesHandler
 	ColumnValuesHandler         ColumnValuesHandler
-	CallResourceHandler         backend.CallResourceHandler
+
+	// The CallResourceHandler is used to forward requests that are not handled by the schema handlers.
+	CallResourceHandler backend.CallResourceHandler
 }
 
 // NewSchemaDatasource creates a [SchemaDatasource]. Pass nil for
