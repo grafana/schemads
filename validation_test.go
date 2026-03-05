@@ -17,7 +17,7 @@ func TestValidateSchema(t *testing.T) {
 			schema: nil,
 		},
 		{
-			name: "valid schema without sub-tables",
+			name: "valid schema without table parameters",
 			schema: &Schema{
 				Tables: []Table{
 					{Name: "issues", Columns: []Column{{Name: "id", Type: ColumnTypeInt64}}},
@@ -29,13 +29,13 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, Required: true},
 						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
 					},
 					Columns: []Column{{Name: "title", Type: ColumnTypeString}},
 				}},
-				SubTableValues: map[string]map[string][]string{
+				TableParameterValues: map[string]map[string][]string{
 					"issues": {
 						"organization": {"grafana", "kubernetes"},
 					},
@@ -47,7 +47,7 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "pull_requests",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, Required: true},
 						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
 						{Name: "branch", DependsOn: []string{"repository"}},
@@ -56,37 +56,37 @@ func TestValidateSchema(t *testing.T) {
 			},
 		},
 		{
-			name: "duplicate sub-table names",
+			name: "duplicate table parameter names",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true},
 						{Name: "organization", Root: true},
 					},
 				}},
 			},
-			wantErr: "duplicate sub-table name",
+			wantErr: "duplicate table parameter name",
 		},
 		{
-			name: "DependsOn references non-existent sub-table",
+			name: "DependsOn references non-existent table parameter",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true},
 						{Name: "repository", DependsOn: []string{"nonexistent"}},
 					},
 				}},
 			},
-			wantErr: "depends on non-existent sub-table",
+			wantErr: "depends on non-existent table parameter",
 		},
 		{
 			name: "deep shared dependency graph",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "a", Root: true},
 						{Name: "b", DependsOn: []string{"a"}},
 						{Name: "c", DependsOn: []string{"b"}},
@@ -102,7 +102,7 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "a", Root: true},
 						{Name: "cycle_start", DependsOn: []string{"a", "cycle_end"}},
 						{Name: "cycle_mid", DependsOn: []string{"cycle_start"}},
@@ -117,7 +117,7 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true},
 						{Name: "self", DependsOn: []string{"self"}},
 					},
@@ -130,7 +130,7 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, DependsOn: []string{"repository"}},
 						{Name: "repository"},
 					},
@@ -139,11 +139,11 @@ func TestValidateSchema(t *testing.T) {
 			wantErr: "marked as root but has dependencies",
 		},
 		{
-			name: "no root sub-table present",
+			name: "no root table parameter present",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "repository", DependsOn: []string{"organization"}},
 						{Name: "organization"},
 					},
@@ -156,49 +156,49 @@ func TestValidateSchema(t *testing.T) {
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, Required: false},
 						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
 					},
 				}},
 			},
-			wantErr: "non-required sub-table",
+			wantErr: "non-required table parameter",
 		},
 		{
-			name: "SubTableValues references non-existent table",
+			name: "TableParameterValues references non-existent table",
 			schema: &Schema{
 				Tables: []Table{
-					{Name: "issues", SubTables: []SubTable{{Name: "organization", Root: true}}},
+					{Name: "issues", TableParameters: []TableParameter{{Name: "organization", Root: true}}},
 				},
-				SubTableValues: map[string]map[string][]string{
+				TableParameterValues: map[string]map[string][]string{
 					"nonexistent": {"organization": {"val"}},
 				},
 			},
 			wantErr: "non-existent table",
 		},
 		{
-			name: "SubTableValues references non-existent sub-table",
+			name: "TableParameterValues references non-existent table parameter",
 			schema: &Schema{
 				Tables: []Table{
-					{Name: "issues", SubTables: []SubTable{{Name: "organization", Root: true}}},
+					{Name: "issues", TableParameters: []TableParameter{{Name: "organization", Root: true}}},
 				},
-				SubTableValues: map[string]map[string][]string{
+				TableParameterValues: map[string]map[string][]string{
 					"issues": {"nonexistent": {"val"}},
 				},
 			},
-			wantErr: "non-existent sub-table",
+			wantErr: "non-existent table parameter",
 		},
 		{
-			name: "valid SubTableValues for root sub-tables only",
+			name: "valid TableParameterValues for root table parameters only",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, Required: true},
 						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
 					},
 				}},
-				SubTableValues: map[string]map[string][]string{
+				TableParameterValues: map[string]map[string][]string{
 					"issues": {
 						"organization": {"grafana", "kubernetes"},
 					},
@@ -206,27 +206,27 @@ func TestValidateSchema(t *testing.T) {
 			},
 		},
 		{
-			name: "SubTableValues rejects non-root sub-table",
+			name: "TableParameterValues rejects non-root table parameter",
 			schema: &Schema{
 				Tables: []Table{{
 					Name: "issues",
-					SubTables: []SubTable{
+					TableParameters: []TableParameter{
 						{Name: "organization", Root: true, Required: true},
 						{Name: "repository", DependsOn: []string{"organization"}, Required: true},
 					},
 				}},
-				SubTableValues: map[string]map[string][]string{
+				TableParameterValues: map[string]map[string][]string{
 					"issues": {
 						"repository": {"grafana", "loki"},
 					},
 				},
 			},
-			wantErr: "non-root sub-table",
+			wantErr: "non-root table parameter",
 		},
 		{
-			name: "empty sub-tables list is valid",
+			name: "empty table parameters list is valid",
 			schema: &Schema{
-				Tables: []Table{{Name: "issues", SubTables: []SubTable{}}},
+				Tables: []Table{{Name: "issues", TableParameters: []TableParameter{}}},
 			},
 		},
 	}

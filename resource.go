@@ -1,28 +1,34 @@
 package schemas
 
 import (
-	"encoding/json"
-
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-const SchemaResourcePath = "schema"
+const BaseResourcePath = "abstractionSchema"
 
-// parseSchemaRequest decodes a CallResource body into a [SchemaRequest] and
-// flattens the multi-valued header map into single values.
-func parseSchemaRequest(req *backend.CallResourceRequest) (*SchemaRequest, error) {
-	schemaReq := &SchemaRequest{}
-	if len(req.Body) > 0 {
-		if err := json.Unmarshal(req.Body, schemaReq); err != nil {
-			return nil, err
-		}
-	}
+const (
+	// RequestTypeFullSchema returns the complete schema (tables, columns,
+	// table parameters, functions, and table parameter values).
+	RequestTypeFullSchema string = "fullSchema"
+	// RequestTypeTables returns table names and their table parameter definitions.
+	RequestTypeTables string = "tables"
+	// RequestTypeColumns returns columns for the tables listed in
+	// [ColumnsRequest.Tables].
+	RequestTypeColumns string = "columns"
+	// RequestTypeColumnValues returns possible values for the columns listed in
+	// [ColumnValuesRequest.Columns].
+	RequestTypeColumnValues string = "columnValues"
+	// RequestTypeTableParameterValues returns possible values for table parameters
+	// identified by [TableParameterValuesRequest].
+	RequestTypeTableParameterValues string = "tableParameterValues"
+)
+
+func extractHeaders(req *backend.CallResourceRequest) map[string]string {
 	headers := make(map[string]string)
 	for k, v := range req.Headers {
 		if len(v) > 0 {
 			headers[k] = v[0]
 		}
 	}
-	schemaReq.Headers = headers
-	return schemaReq, nil
+	return headers
 }

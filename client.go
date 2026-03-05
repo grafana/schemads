@@ -8,71 +8,114 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 )
 
-// FetchSchema sends a [SchemaRequest] to a plugin's schema resource endpoint
-// over HTTP and returns the decoded [SchemaResponse].
-//
-// schemaURL must be the full URL to the schema resource (e.g.
-// "https://host/api/ds/uid/resources/schema"). Headers set on
-// [SchemaRequest.Headers] are forwarded as HTTP request headers.
-func FetchSchema(ctx context.Context, httpClient *http.Client, schemaURL string, req *SchemaRequest) (*SchemaResponse, error) {
+type Client struct {
+	httpClient *http.Client
+	baseURL    string
+}
+
+func NewClient(httpClient *http.Client, baseURL string) (*Client, error) {
 	if httpClient == nil {
-		return nil, fmt.Errorf("httpClient is required")
+		return nil, fmt.Errorf("schemads: httpClient is required")
 	}
-
-	if schemaURL == "" {
-		return nil, fmt.Errorf("schemaURL is required")
+	if baseURL == "" {
+		return nil, fmt.Errorf("schemads: baseURL is required")
 	}
-
-	parsed, err := url.Parse(schemaURL)
+	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("schemads: invalid URL: %w", err)
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
 		return nil, fmt.Errorf("schemads: unsupported URL scheme %q", parsed.Scheme)
 	}
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    strings.TrimRight(parsed.String(), "/"),
+	}, nil
+}
 
-	bodyBytes, err := json.Marshal(req)
+func (c *Client) FetchSchema(ctx context.Context, req *SchemaRequest) (*SchemaResponse, error) {
+	var resp SchemaResponse
+	if err := c.do(ctx, RequestTypeFullSchema, req.Headers, req, &resp, ErrSchemaNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) FetchTables(ctx context.Context, req *TablesRequest) (*TablesResponse, error) {
+	var resp TablesResponse
+	if err := c.do(ctx, RequestTypeTables, req.Headers, req, &resp, ErrTablesNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) FetchColumns(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error) {
+	var resp ColumnsResponse
+	if err := c.do(ctx, RequestTypeColumns, req.Headers, req, &resp, ErrColumnsNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) FetchTableParameterValues(ctx context.Context, req *TableParameterValuesRequest) (*TableParametersValuesResponse, error) {
+	var resp TableParametersValuesResponse
+	if err := c.do(ctx, RequestTypeTableParameterValues, req.Headers, req, &resp, ErrTableParameterValuesNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) FetchColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error) {
+	var resp ColumnValuesResponse
+	if err := c.do(ctx, RequestTypeColumnValues, req.Headers, req, &resp, ErrColumnValuesNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) do(ctx context.Context, path string, headers map[string]string, reqBody any, out any, notImplErr error) error {
+	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("schemads: failed to marshal request: %w", err)
+		return fmt.Errorf("schemads: failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/"+path, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("schemads: failed to create HTTP request: %w", err)
+		return fmt.Errorf("schemads: failed to create HTTP request: %w", err)
 	}
 
-	for k, v := range req.Headers {
+	for k, v := range headers {
 		httpReq.Header.Set(k, v)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
-	resp, err := httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("schemads: request failed: %w", err)
+		return fmt.Errorf("schemads: request failed: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.DefaultLogger.Warn("schemads: failed to close response body: %w", err)
+			log.DefaultLogger.Warn("schemads: failed to close response body", "error", err)
 		}
 	}()
 
 	if resp.StatusCode == http.StatusNotImplemented {
-		return nil, ErrSchemaNotImplemented
+		return notImplErr
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("schemads: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("schemads: unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var schema SchemaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&schema); err != nil {
-		return nil, fmt.Errorf("schemads: failed to decode response: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("schemads: failed to decode response: %w", err)
 	}
-	return &schema, nil
+	return nil
 }

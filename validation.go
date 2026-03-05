@@ -4,51 +4,23 @@ import (
 	"fmt"
 )
 
-// ValidateRequest checks that a SchemaRequest is well-formed before it is
-// dispatched to a handler. It enforces that the request type is recognised
-// and that any fields required by that type are present.
-func ValidateRequest(req *SchemaRequest) error {
-	if req == nil {
-		return fmt.Errorf("schema request must not be nil")
-	}
-	switch req.Type {
-	case RequestTypeFullSchema, RequestTypeTables:
-		// no extra fields required
-	case RequestTypeColumns:
-		if len(req.Tables) == 0 {
-			return fmt.Errorf("tables must be specified when requesting columns")
-		}
-	case RequestTypeValues:
-		if len(req.Columns) == 0 {
-			return fmt.Errorf("columns must be specified when requesting values")
-		}
-	case RequestTypeSubTableValues:
-		if len(req.SubTables) == 0 {
-			return fmt.Errorf("subTables must be specified when requesting sub-table values")
-		}
-	default:
-		return fmt.Errorf("invalid table information request type: must be one of tables, columns, values, subTableValues")
-	}
-	return nil
-}
-
-// ValidateSchema validates the structural integrity of a Schema's sub-table
+// ValidateSchema validates the structural integrity of a Schema's table parameter
 // definitions. It is called automatically when a fullSchema response is
 // returned and may also be called by consumers who construct schemas manually.
 //
-// For each table that defines sub-tables, ValidateSchema checks:
-//   - Sub-table names are unique within the parent table.
-//   - Every DependsOn entry references an existing sibling sub-table.
+// For each table that defines table parameters, ValidateSchema checks:
+//   - Table parameter name is unique within the parent table.
+//   - Every DependsOn entry references an existing sibling table parameter.
 //   - The dependency graph is acyclic.
-//   - At least one sub-table is marked Root, and root sub-tables have no
+//   - At least one table parameter is marked Root, and root table parameters have no
 //     dependencies.
-//   - Required sub-tables only depend on other required sub-tables (the
+//   - Required table parameters only depend on other required table parameters (the
 //     "required chain" invariant).
 //
-// At the schema level it also verifies that SubTableValues only references
-// tables and root sub-tables that actually exist in the schema. Non-root
-// sub-table values depend on ancestor selections and cannot be
-// pre-populated; they must be fetched via SubTableValuesRequest.
+// At the schema level it also verifies that TableParameterValues only references
+// tables and root table parameters that actually exist in the schema. Non-root
+// table parameter values depend on ancestor selections and cannot be
+// pre-populated; they must be fetched via TableParameterValuesRequest.
 //
 // Returns nil when schema is nil or all invariants hold.
 func ValidateSchema(schema *Schema) error {
@@ -65,75 +37,75 @@ func ValidateSchema(schema *Schema) error {
 	}
 
 	for i := range schema.Tables {
-		if err := validateTableSubTables(&schema.Tables[i]); err != nil {
+		if err := validateTableParameters(&schema.Tables[i]); err != nil {
 			return fmt.Errorf("table %q: %w", schema.Tables[i].Name, err)
 		}
 	}
 
-	if err := validateSubTableValues(schema.SubTableValues, tablesByName); err != nil {
+	if err := validateTableParameterValues(schema.TableParameterValues, tablesByName); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// validateTableSubTables validates the sub-table definitions within a single
+// validateTableParameters validates the table parameter definitions within a single
 // table. It runs five checks in order:
 //
-//  1. Uniqueness  – no two sub-tables share the same name.
-//  2. References  – every DependsOn entry names a sibling sub-table.
+//  1. Uniqueness  – no two table parameters share the same name.
+//  2. References  – every DependsOn entry names a sibling table parameter.
 //  3. Acyclicity  – the dependency graph contains no cycles.
-//  4. Root rules  – at least one sub-table is Root and root sub-tables
+//  4. Root rules  – at least one table parameter is Root and root table parameters
 //     must not declare dependencies.
-//  5. Required chain – a required sub-table cannot depend on an optional one,
-//     because the consumer would be unable to resolve the required sub-table
+//  5. Required chain – a required table parameter cannot depend on an optional one,
+//     because the consumer would be unable to resolve the required table parameter
 //     without first resolving its optional ancestor.
 //
-// Skips validation (returns nil) when the table has no sub-tables.
-func validateTableSubTables(table *Table) error {
-	if len(table.SubTables) == 0 {
+// Skips validation (returns nil) when the table has no table parameters.
+func validateTableParameters(table *Table) error {
+	if len(table.TableParameters) == 0 {
 		return nil
 	}
 
-	knownNames := make(map[string]struct{}, len(table.SubTables))
+	knownNames := make(map[string]struct{}, len(table.TableParameters))
 	hasRoot := false
-	for _, subTable := range table.SubTables {
-		if _, duplicate := knownNames[subTable.Name]; duplicate {
-			return fmt.Errorf("duplicate sub-table name %q", subTable.Name)
+	for _, tableParameter := range table.TableParameters {
+		if _, duplicate := knownNames[tableParameter.Name]; duplicate {
+			return fmt.Errorf("duplicate table parameter name %q", tableParameter.Name)
 		}
-		knownNames[subTable.Name] = struct{}{}
-		if subTable.Root {
+		knownNames[tableParameter.Name] = struct{}{}
+		if tableParameter.Root {
 			hasRoot = true
-			if len(subTable.DependsOn) > 0 {
-				return fmt.Errorf("sub-table %q is marked as root but has dependencies", subTable.Name)
+			if len(tableParameter.DependsOn) > 0 {
+				return fmt.Errorf("table parameter %q is marked as root but has dependencies", tableParameter.Name)
 			}
 		}
 	}
 
 	if !hasRoot {
-		return fmt.Errorf("sub-tables defined but none are marked as root")
+		return fmt.Errorf("table parameters defined but none are marked as root")
 	}
 
-	for _, subTable := range table.SubTables {
-		for _, dependency := range subTable.DependsOn {
+	for _, tableParameter := range table.TableParameters {
+		for _, dependency := range tableParameter.DependsOn {
 			if _, exists := knownNames[dependency]; !exists {
-				return fmt.Errorf("sub-table %q depends on non-existent sub-table %q", subTable.Name, dependency)
+				return fmt.Errorf("table parameter %q depends on non-existent table parameter %q", tableParameter.Name, dependency)
 			}
 		}
 	}
 
-	if err := detectCycle(table.SubTables); err != nil {
+	if err := detectCycle(table.TableParameters); err != nil {
 		return err
 	}
 
-	if err := validateRequiredChain(table.SubTables); err != nil {
+	if err := validateRequiredChain(table.TableParameters); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// detectCycle performs a depth-first search over the sub-table dependency
+// detectCycle performs a depth-first search over the table parameter dependency
 // graph to detect circular dependencies. It uses three-state colouring:
 //
 //   - unvisited: the node has not been reached yet.
@@ -143,33 +115,33 @@ func validateTableSubTables(table *Table) error {
 //   - visited:   the node and all its descendants have been fully explored
 //     without finding a cycle through this node.
 //
-// Every sub-table is used as a DFS entry point so that disconnected
+// Every table parameter is used as a DFS entry point so that disconnected
 // components are also checked.
-func detectCycle(subTables []SubTable) error {
+func detectCycle(tableParameters []TableParameter) error {
 	const (
 		unvisited = 0
 		visiting  = 1
 		visited   = 2
 	)
 
-	subTableByName := make(map[string]*SubTable, len(subTables))
-	for i := range subTables {
-		subTableByName[subTables[i].Name] = &subTables[i]
+	tableParameterByName := make(map[string]*TableParameter, len(tableParameters))
+	for i := range tableParameters {
+		tableParameterByName[tableParameters[i].Name] = &tableParameters[i]
 	}
 
-	visitState := make(map[string]int, len(subTables))
+	visitState := make(map[string]int, len(tableParameters))
 
 	var visit func(name string) error
 	visit = func(name string) error {
 		switch visitState[name] {
 		case visiting:
-			return fmt.Errorf("circular dependency detected involving sub-table %q", name)
+			return fmt.Errorf("circular dependency detected involving table parameter %q", name)
 		case visited:
 			return nil
 		}
 
 		visitState[name] = visiting
-		for _, dependency := range subTableByName[name].DependsOn {
+		for _, dependency := range tableParameterByName[name].DependsOn {
 			if err := visit(dependency); err != nil {
 				return err
 			}
@@ -178,40 +150,40 @@ func detectCycle(subTables []SubTable) error {
 		return nil
 	}
 
-	for _, subTable := range subTables {
-		if err := visit(subTable.Name); err != nil {
+	for _, tableParameter := range tableParameters {
+		if err := visit(tableParameter.Name); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateRequiredChain enforces that if a sub-table is marked Required,
-// every sub-table it depends on must also be Required. Without this rule a
-// consumer could encounter a required sub-table whose ancestor values are
+// validateRequiredChain enforces that if a table parameter is marked Required,
+// every table parameter it depends on must also be Required. Without this rule a
+// consumer could encounter a required table parameter whose ancestor values are
 // optional and therefore potentially unresolved, making it impossible to
-// satisfy the required sub-table.
+// satisfy the required table parameter.
 //
-// Example violation: sub-table "repository" (required) depends on
+// Example violation: table parameter "repository" (required) depends on
 // "organization" (optional). The consumer must select an organization
 // before it can resolve repository, but organization is not required,
 // so the dependency chain is broken.
-func validateRequiredChain(subTables []SubTable) error {
-	isRequired := make(map[string]bool, len(subTables))
-	for _, subTable := range subTables {
-		isRequired[subTable.Name] = subTable.Required
+func validateRequiredChain(tableParameters []TableParameter) error {
+	isRequired := make(map[string]bool, len(tableParameters))
+	for _, tableParameter := range tableParameters {
+		isRequired[tableParameter.Name] = tableParameter.Required
 	}
 
-	for _, subTable := range subTables {
-		if !subTable.Required {
+	for _, tableParameter := range tableParameters {
+		if !tableParameter.Required {
 			continue
 		}
-		for _, dependency := range subTable.DependsOn {
+		for _, dependency := range tableParameter.DependsOn {
 			if !isRequired[dependency] {
 				return fmt.Errorf(
-					"required sub-table %q depends on non-required sub-table %q; "+
-						"all dependencies of a required sub-table must also be required",
-					subTable.Name, dependency,
+					"required table parameter %q depends on non-required table parameter %q; "+
+						"all dependencies of a required table parameter must also be required",
+					tableParameter.Name, dependency,
 				)
 			}
 		}
@@ -219,37 +191,37 @@ func validateRequiredChain(subTables []SubTable) error {
 	return nil
 }
 
-// validateSubTableValues checks that Schema.SubTableValues only references
-// tables and sub-tables that exist in the schema, and that every referenced
-// sub-table is a root. Non-root sub-tables have dependencies whose selected
+// validateTableParameterValues checks that Schema.TableParameterValues only references
+// tables and table parameters that exist in the schema, and that every referenced
+// table parameter is a root. Non-root table parameters have dependencies whose selected
 // values determine the result set, so pre-populating them in a flat list is
-// meaningless — consumers must use SubTableValuesRequest with
+// meaningless — consumers must use TableParameterValuesRequest with
 // DependencyValues for correlated fetching instead.
-func validateSubTableValues(subTableValues map[string]map[string][]string, tablesByName map[string]*Table) error {
-	for tableName, valuesBySubTable := range subTableValues {
+func validateTableParameterValues(tableParameterValues map[string]map[string][]string, tablesByName map[string]*Table) error {
+	for tableName, valuesByTableParameter := range tableParameterValues {
 		table, tableExists := tablesByName[tableName]
 		if !tableExists {
-			return fmt.Errorf("subTableValues references non-existent table %q", tableName)
+			return fmt.Errorf("tableParameterValues references non-existent table %q", tableName)
 		}
 
-		subTableRoots := make(map[string]bool, len(table.SubTables))
-		for i := range table.SubTables {
-			subTableRoots[table.SubTables[i].Name] = table.SubTables[i].Root
+		tableParameterRoots := make(map[string]bool, len(table.TableParameters))
+		for i := range table.TableParameters {
+			tableParameterRoots[table.TableParameters[i].Name] = table.TableParameters[i].Root
 		}
 
-		for subTableName := range valuesBySubTable {
-			root, exists := subTableRoots[subTableName]
+		for tableParameterName := range valuesByTableParameter {
+			root, exists := tableParameterRoots[tableParameterName]
 			if !exists {
 				return fmt.Errorf(
-					"subTableValues references non-existent sub-table %q on table %q",
-					subTableName, tableName,
+					"tableParameterValues references non-existent table parameter %q on table %q",
+					tableParameterName, tableName,
 				)
 			}
 			if !root {
 				return fmt.Errorf(
-					"subTableValues contains non-root sub-table %q on table %q; "+
-						"only root sub-tables may have pre-populated values",
-					subTableName, tableName,
+					"tableParameterValues contains non-root table parameter %q on table %q; "+
+						"only root table parameters may have pre-populated values",
+					tableParameterName, tableName,
 				)
 			}
 		}
