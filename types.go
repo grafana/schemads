@@ -203,3 +203,28 @@ const (
 	ColumnTypeBlob ColumnType = "blob"
 	ColumnTypeBit  ColumnType = "bit"
 )
+
+// Generic abstraction types
+
+// FilterCondition represents a single filter condition applied to a column.
+// For scalar operators (==, !=, >, >=, <, <=, like) use Value.
+// For the "in" operator use Values.
+type FilterCondition struct {
+	Operator string   `json:"operator"`
+	Value    string   `json:"value,omitempty"`
+	Values   []string `json:"values,omitempty"`
+}
+
+// ColumnFilter represents a set of filters applied to a specific column.
+// Multiple conditions are ANDed together.
+type ColumnFilter struct {
+	Name       string            `json:"name"`
+	Conditions []FilterCondition `json:"conditions"`
+}
+
+type GenericQuery struct {
+	apidata.CommonQueryProperties `json:",inline"`
+	Table                         string         `json:"table"`
+	Filters                       []ColumnFilter `json:"filters"`
+	GrafanaSql                    bool           `json:"grafanaSql"`
+}
