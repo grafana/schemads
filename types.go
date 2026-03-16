@@ -224,7 +224,8 @@ type ColumnFilter struct {
 
 type GenericQuery struct {
 	apidata.CommonQueryProperties `json:",inline"`
-	Table                         string         `json:"table"`
-	Filters                       []ColumnFilter `json:"filters"`
-	GrafanaSql                    bool           `json:"grafanaSql"`
+	Table                         string            `json:"table"`
+	Filters                       []ColumnFilter    `json:"filters"`
+	TableParameterValues          map[string]string `json:"tableParameterValues,omitempty"`
+	GrafanaSql                    bool              `json:"grafanaSql"`
 }
