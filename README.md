@@ -230,7 +230,7 @@ Columns declare which filter operations they support via `Column.Operators`:
 
 | Constant                     | Value  |
 | ---------------------------- | ------ |
-| `OperatorEquals`             | `==`   |
+| `OperatorEquals`             | `=`    |
 | `OperatorNotEquals`          | `!=`   |
 | `OperatorGreaterThan`        | `>`    |
 | `OperatorGreaterThanOrEqual` | `>=`   |
