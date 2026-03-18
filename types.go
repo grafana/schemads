@@ -133,7 +133,7 @@ type TableParameter struct {
 type Operator string
 
 const (
-	OperatorEquals             Operator = "=="
+	OperatorEquals             Operator = "="
 	OperatorNotEquals          Operator = "!="
 	OperatorGreaterThan        Operator = ">"
 	OperatorGreaterThanOrEqual Operator = ">="
@@ -207,7 +207,7 @@ const (
 // Generic abstraction types
 
 // FilterCondition represents a single filter condition applied to a column.
-// For scalar operators (==, !=, >, >=, <, <=, like) use Value.
+// For scalar operators (=, !=, >, >=, <, <=, like) use Value.
 // For the "in" operator use Values.
 type FilterCondition struct {
 	Operator string   `json:"operator"`
