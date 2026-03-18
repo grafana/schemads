@@ -210,7 +210,7 @@ const (
 // For scalar operators (==, !=, >, >=, <, <=, like) use Value.
 // For the "in" operator use Values.
 type FilterCondition struct {
-	Operator string   `json:"operator"`
+	Operator Operator `json:"operator"`
 	Value    string   `json:"value,omitempty"`
 	Values   []string `json:"values,omitempty"`
 }
