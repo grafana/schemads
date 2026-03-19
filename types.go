@@ -211,8 +211,8 @@ const (
 // For the "in" operator use Values.
 type FilterCondition struct {
 	Operator Operator `json:"operator"`
-	Value    string   `json:"value,omitempty"`
-	Values   []string `json:"values,omitempty"`
+	Value    any      `json:"value,omitempty"`
+	Values   []any    `json:"values,omitempty"`
 }
 
 // ColumnFilter represents a set of filters applied to a specific column.
@@ -222,10 +222,10 @@ type ColumnFilter struct {
 	Conditions []FilterCondition `json:"conditions"`
 }
 
-type GenericQuery struct {
+type Query struct {
 	apidata.CommonQueryProperties `json:",inline"`
-	Table                         string            `json:"table"`
-	Filters                       []ColumnFilter    `json:"filters"`
-	TableParameterValues          map[string]string `json:"tableParameterValues,omitempty"`
-	GrafanaSql                    bool              `json:"grafanaSql"`
+	Table                         string         `json:"table"`
+	Filters                       []ColumnFilter `json:"filters"`
+	TableParameterValues          map[string]any `json:"tableParameterValues,omitempty"`
+	GrafanaSql                    bool           `json:"grafanaSql"`
 }
