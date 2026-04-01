@@ -8,6 +8,7 @@ package schemas
 
 import (
 	"context"
+	"net/http"
 
 	apidata "github.com/grafana/grafana-plugin-sdk-go/experimental/apis/datasource/v0alpha1"
 )
@@ -33,15 +34,15 @@ type ColumnValuesHandler interface {
 }
 
 type SchemaRequest struct {
-	Headers map[string]string `json:"-"`
+	Headers http.Header `json:"-"`
 }
 
 type TablesRequest struct {
-	Headers map[string]string `json:"-"`
+	Headers         http.Header       `json:"-"`
 }
 
 type ColumnsRequest struct {
-	Headers         map[string]string `json:"-"`
+	Headers         http.Header       `json:"-"`
 	Tables          []string          `json:"tables"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
 }
@@ -49,7 +50,7 @@ type ColumnsRequest struct {
 // ColumnValuesRequest identifies a column whose possible values are being
 // requested, along with optional parameters to scope the result.
 type ColumnValuesRequest struct {
-	Headers         map[string]string `json:"-"`
+	Headers         http.Header       `json:"-"`
 	Table           string            `json:"table"`
 	Columns         []string          `json:"columns,omitempty"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
@@ -61,7 +62,7 @@ type ColumnValuesRequest struct {
 // enumerable values. Table is required because the same table parameter name may
 // have different semantics across parent tables.
 type TableParameterValuesRequest struct {
-	Headers          map[string]string `json:"-"`
+	Headers          http.Header       `json:"-"`
 	Table            string            `json:"table"`
 	TableParameter   string            `json:"tableParameter,omitempty"`
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`

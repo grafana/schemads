@@ -78,7 +78,7 @@ func (c *Client) FetchColumnValues(ctx context.Context, req *ColumnValuesRequest
 	return &resp, nil
 }
 
-func (c *Client) do(ctx context.Context, path string, headers map[string]string, reqBody any, out any, notImplErr error) error {
+func (c *Client) do(ctx context.Context, path string, headers http.Header, reqBody any, out any, notImplErr error) error {
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("schemads: failed to marshal request: %w", err)
@@ -89,8 +89,10 @@ func (c *Client) do(ctx context.Context, path string, headers map[string]string,
 		return fmt.Errorf("schemads: failed to create HTTP request: %w", err)
 	}
 
-	for k, v := range headers {
-		httpReq.Header.Set(k, v)
+	for k, vals := range headers {
+		for _, v := range vals {
+			httpReq.Header.Add(k, v)
+		}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")

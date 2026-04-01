@@ -1,6 +1,8 @@
 package schemas
 
 import (
+	"net/http"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
@@ -23,12 +25,10 @@ const (
 	RequestTypeTableParameterValues string = "tableParameterValues"
 )
 
-func extractHeaders(req *backend.CallResourceRequest) map[string]string {
-	headers := make(map[string]string)
+func extractHeaders(req *backend.CallResourceRequest) http.Header {
+	headers := make(http.Header, len(req.Headers))
 	for k, v := range req.Headers {
-		if len(v) > 0 {
-			headers[k] = v[0]
-		}
+		headers[k] = v
 	}
 	return headers
 }
