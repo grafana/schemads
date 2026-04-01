@@ -137,6 +137,15 @@ resp, err := client.FetchColumns(ctx, &schemas.ColumnsRequest{
 // resp.Columns – map[string][]Column
 ```
 
+Fetching columns scoped by table parameters:
+
+```go
+resp, err := client.FetchColumns(ctx, &schemas.ColumnsRequest{
+    Tables:          []string{"issues"},
+    TableParameters: map[string]string{"organization": "grafana", "repository": "grafana"},
+})
+```
+
 Fetching table parameter values:
 
 ```go

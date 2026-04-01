@@ -41,8 +41,9 @@ type TablesRequest struct {
 }
 
 type ColumnsRequest struct {
-	Headers map[string]string `json:"-"`
-	Tables  []string          `json:"tables"`
+	Headers         map[string]string `json:"-"`
+	Tables          []string          `json:"tables"`
+	TableParameters map[string]string `json:"tableParameters,omitempty"`
 }
 
 // ColumnValuesRequest identifies a column whose possible values are being
