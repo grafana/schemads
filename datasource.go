@@ -83,9 +83,14 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if ds.TablesHandler == nil {
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrTablesNotImplemented.Error())
 		}
-		response, err := ds.TablesHandler.Tables(ctx, &TablesRequest{
-			Headers: headers,
-		})
+		request := &TablesRequest{}
+		if len(req.Body) > 0 {
+			if err := json.Unmarshal(req.Body, request); err != nil {
+				return err
+			}
+		}
+		request.Headers = headers
+		response, err := ds.TablesHandler.Tables(ctx, request)
 		if err != nil {
 			return err
 		}
