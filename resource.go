@@ -23,6 +23,8 @@ const (
 	// RequestTypeTableParameterValues returns possible values for table parameters
 	// identified by [TableParameterValuesRequest].
 	RequestTypeTableParameterValues string = "tableParameterValues"
+	// RequestTypeFunctions returns the SQL functions a datasource exposes.
+	RequestTypeFunctions string = "functions"
 )
 
 func extractHeaders(req *backend.CallResourceRequest) http.Header {

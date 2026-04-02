@@ -20,6 +20,7 @@ type SchemaDatasource struct {
 	ColumnsHandler              ColumnsHandler
 	TableParameterValuesHandler TableParameterValuesHandler
 	ColumnValuesHandler         ColumnValuesHandler
+	FunctionsHandler            FunctionsHandler
 
 	// The CallResourceHandler is used to forward requests that are not handled by the schema handlers.
 	CallResourceHandler backend.CallResourceHandler
@@ -142,6 +143,25 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		}
 		request.Headers = headers
 		response, err := ds.ColumnValuesHandler.ColumnValues(ctx, request)
+		if err != nil {
+			return err
+		}
+		data, err = json.Marshal(response)
+		if err != nil {
+			return err
+		}
+	case RequestTypeFunctions:
+		if ds.FunctionsHandler == nil {
+			return sendSchemaError(sender, http.StatusNotImplemented, ErrFunctionsNotImplemented.Error())
+		}
+		request := &FunctionsRequest{}
+		if len(req.Body) > 0 {
+			if err := json.Unmarshal(req.Body, request); err != nil {
+				return err
+			}
+		}
+		request.Headers = headers
+		response, err := ds.FunctionsHandler.Functions(ctx, request)
 		if err != nil {
 			return err
 		}

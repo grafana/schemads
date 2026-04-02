@@ -96,10 +96,51 @@ type TableParametersValuesResponse struct {
 	Errors               map[string]string   `json:"errors,omitempty"`
 }
 
+// FunctionKind distinguishes table-valued functions (used in FROM) from scalar
+// functions (used in SELECT/WHERE). Only FunctionKindTable is implemented.
+type FunctionKind string
+
+const (
+	FunctionKindTable  FunctionKind = "table"
+	FunctionKindScalar FunctionKind = "scalar"
+)
+
+// FunctionParam describes a single parameter accepted by a [Function].
+type FunctionParam struct {
+	Name        string     `json:"name"`
+	Type        ColumnType `json:"type"`
+	Required    bool       `json:"required"`
+	Description string     `json:"description,omitempty"`
+}
+
+// Function describes a SQL function that a datasource exposes.
+type Function struct {
+	Name        string          `json:"name"`
+	Kind        FunctionKind    `json:"kind"`
+	Params      []FunctionParam `json:"params"`
+	Description string          `json:"description,omitempty"`
+}
+
+// FunctionsHandler returns the functions a datasource supports.
+type FunctionsHandler interface {
+	Functions(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error)
+}
+
+// FunctionsRequest is the request body for a "functions" endpoint call.
+type FunctionsRequest struct {
+	Headers http.Header `json:"-"`
+}
+
+// FunctionsResponse is the JSON body returned by the functions endpoint.
+type FunctionsResponse struct {
+	Functions []Function        `json:"functions"`
+	Errors    map[string]string `json:"errors,omitempty"`
+}
+
 // Schema is the complete tabular schema returned by a "fullSchema" request.
 type Schema struct {
-	Tables    []Table  `json:"tables,omitempty"`
-	Functions []string `json:"functions,omitempty"`
+	Tables    []Table    `json:"tables,omitempty"`
+	Functions []Function `json:"functions,omitempty"`
 	// TableParameterValues provides pre-populated values for root table parameters only
 	// (table name -> table parameter name -> values). Non-root table parameter values
 	// depend on ancestor selections and must be fetched incrementally via
