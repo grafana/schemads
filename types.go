@@ -112,6 +112,9 @@ type Table struct {
 	Name            string           `json:"name"`
 	TableParameters []TableParameter `json:"tableParameters,omitempty"`
 	Columns         []Column         `json:"columns,omitempty"`
+	// TableHints lists the per-table execution hints this table supports
+	// via FOR (...) clauses in SQL.
+	TableHints []TableHint `json:"tableHints,omitempty"`
 }
 
 // TableParameter describes a hierarchical table parameter within a parent [Table].
@@ -224,10 +227,28 @@ type ColumnFilter struct {
 	Conditions []FilterCondition `json:"conditions"`
 }
 
+// TableHint describes a per-table execution hint that a datasource supports.
+// Hints are specified via FOR (...) clauses in SQL and control how the
+// datasource backend executes the query for a specific table — e.g.
+// rate('5m'), step('30s'), instant. Unlike table parameters, hints do not
+// appear as columns and do not affect the table schema.
+type TableHint struct {
+	// Name is the hint identifier used in SQL: FOR (name('value')).
+	Name string `json:"name"`
+	// Description is optional human/LLM-readable documentation.
+	Description string `json:"description,omitempty"`
+	// HasValue indicates whether the hint takes a string argument.
+	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
+	HasValue bool `json:"hasValue,omitempty"`
+}
+
 type Query struct {
 	apidata.CommonQueryProperties `json:",inline"`
-	Table                         string         `json:"table"`
-	Filters                       []ColumnFilter `json:"filters"`
-	TableParameterValues          map[string]any `json:"tableParameterValues,omitempty"`
-	GrafanaSql                    bool           `json:"grafanaSql"`
+	Table                         string            `json:"table"`
+	Filters                       []ColumnFilter    `json:"filters"`
+	TableParameterValues          map[string]any    `json:"tableParameterValues,omitempty"`
+	// TableHintValues carries the per-table hints from FOR (...) clauses.
+	// Keys are uppercase hint names, values are the hint arguments (empty for flags).
+	TableHintValues               map[string]string `json:"tableHintValues,omitempty"`
+	GrafanaSql                    bool              `json:"grafanaSql"`
 }
