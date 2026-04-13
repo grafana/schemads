@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	apidata "github.com/grafana/grafana-plugin-sdk-go/experimental/apis/datasource/v0alpha1"
 )
 
@@ -33,16 +34,21 @@ type ColumnValuesHandler interface {
 	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
+type CommonRequest struct {
+	Headers       http.Header           `json:"-"`
+	PluginContext backend.PluginContext `json:"-"`
+}
+
 type SchemaRequest struct {
-	Headers http.Header `json:"-"`
+	CommonRequest
 }
 
 type TablesRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 }
 
 type ColumnsRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 	Tables          []string          `json:"tables"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
 }
@@ -50,7 +56,7 @@ type ColumnsRequest struct {
 // ColumnValuesRequest identifies a column whose possible values are being
 // requested, along with optional parameters to scope the result.
 type ColumnValuesRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 	Table           string            `json:"table"`
 	Columns         []string          `json:"columns,omitempty"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
@@ -62,7 +68,7 @@ type ColumnValuesRequest struct {
 // enumerable values. Table is required because the same table parameter name may
 // have different semantics across parent tables.
 type TableParameterValuesRequest struct {
-	Headers          http.Header       `json:"-"`
+	CommonRequest
 	Table            string            `json:"table"`
 	TableParameter   string            `json:"tableParameter,omitempty"`
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`

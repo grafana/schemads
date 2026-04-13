@@ -60,6 +60,11 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 	path := strings.TrimLeft(strings.TrimPrefix(req.Path, BaseResourcePath), "/")
 	headers := extractHeaders(req)
 
+	commonRequest := &CommonRequest{
+		Headers:       headers,
+		PluginContext: req.PluginContext,
+	}
+
 	var data []byte
 	switch path {
 	case RequestTypeFullSchema:
@@ -67,7 +72,7 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrSchemaNotImplemented.Error())
 		}
 		response, err := ds.SchemaHandler.Schema(ctx, &SchemaRequest{
-			Headers: headers,
+			CommonRequest: *commonRequest,
 		})
 		if err != nil {
 			return err
@@ -83,13 +88,14 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if ds.TablesHandler == nil {
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrTablesNotImplemented.Error())
 		}
-		request := &TablesRequest{}
+		request := &TablesRequest{
+			CommonRequest: *commonRequest,
+		}
 		if len(req.Body) > 0 {
 			if err := json.Unmarshal(req.Body, request); err != nil {
 				return err
 			}
 		}
-		request.Headers = headers
 		response, err := ds.TablesHandler.Tables(ctx, request)
 		if err != nil {
 			return err
@@ -102,11 +108,12 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if ds.ColumnsHandler == nil {
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrColumnsNotImplemented.Error())
 		}
-		request := &ColumnsRequest{}
+		request := &ColumnsRequest{
+			CommonRequest: *commonRequest,
+		}
 		if err := json.Unmarshal(req.Body, request); err != nil {
 			return err
 		}
-		request.Headers = headers
 		response, err := ds.ColumnsHandler.Columns(ctx, request)
 		if err != nil {
 			return err
@@ -119,11 +126,12 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if ds.TableParameterValuesHandler == nil {
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrTableParameterValuesNotImplemented.Error())
 		}
-		request := &TableParameterValuesRequest{}
+		request := &TableParameterValuesRequest{
+			CommonRequest: *commonRequest,
+		}
 		if err := json.Unmarshal(req.Body, request); err != nil {
 			return err
 		}
-		request.Headers = headers
 		response, err := ds.TableParameterValuesHandler.TableParameterValues(ctx, request)
 		if err != nil {
 			return err
@@ -136,11 +144,12 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		if ds.ColumnValuesHandler == nil {
 			return sendSchemaError(sender, http.StatusNotImplemented, ErrColumnValuesNotImplemented.Error())
 		}
-		request := &ColumnValuesRequest{}
+		request := &ColumnValuesRequest{
+			CommonRequest: *commonRequest,
+		}
 		if err := json.Unmarshal(req.Body, request); err != nil {
 			return err
 		}
-		request.Headers = headers
 		response, err := ds.ColumnValuesHandler.ColumnValues(ctx, request)
 		if err != nil {
 			return err
