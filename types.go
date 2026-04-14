@@ -230,10 +230,23 @@ type ColumnFilter struct {
 	Conditions []FilterCondition `json:"conditions"`
 }
 
+// OrderByColumn specifies a column and sort direction for ORDER BY pushdown.
+type OrderByColumn struct {
+	Name string `json:"name"`
+	Desc bool   `json:"desc,omitempty"`
+}
+
 type Query struct {
 	apidata.CommonQueryProperties `json:",inline"`
 	Table                         string         `json:"table"`
 	Filters                       []ColumnFilter `json:"filters"`
 	TableParameterValues          map[string]any `json:"tableParameterValues,omitempty"`
 	GrafanaSql                    bool           `json:"grafanaSql"`
+
+	// Pushdown hints — datasources MAY use these to optimize queries.
+	// The SQL engine still applies these operations on the result for correctness,
+	// so datasources that ignore them produce correct (but potentially slower) results.
+	Columns []string        `json:"columns,omitempty"` // SELECT column projection (nil = all columns)
+	OrderBy []OrderByColumn `json:"orderBy,omitempty"`
+	Limit   *int64          `json:"limit,omitempty"`
 }
