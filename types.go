@@ -233,7 +233,6 @@ type ColumnFilter struct {
 	Conditions []FilterCondition `json:"conditions"`
 }
 
-<<<<<<< kb/datasource-hints
 // TableHint describes a per-table execution hint that a datasource supports.
 // Hints are specified via FOR (...) clauses in SQL and control how the
 // datasource backend executes the query for a specific table — e.g.
@@ -247,29 +246,24 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
-=======
+}
+
 // OrderByColumn specifies a column and sort direction for ORDER BY pushdown.
 type OrderByColumn struct {
 	Name string `json:"name"`
 	Desc bool   `json:"desc,omitempty"`
->>>>>>> main
 }
 
 type Query struct {
 	apidata.CommonQueryProperties `json:",inline"`
-<<<<<<< kb/datasource-hints
-	Table                         string            `json:"table"`
-	Filters                       []ColumnFilter    `json:"filters"`
-	TableParameterValues          map[string]any    `json:"tableParameterValues,omitempty"`
+
+	Table                string         `json:"table"`
+	Filters              []ColumnFilter `json:"filters"`
+	TableParameterValues map[string]any `json:"tableParameterValues,omitempty"`
 	// TableHintValues carries the per-table hints from FOR (...) clauses.
 	// Keys are uppercase hint names, values are the hint arguments (empty for flags).
-	TableHintValues               map[string]string `json:"tableHintValues,omitempty"`
-	GrafanaSql                    bool              `json:"grafanaSql"`
-=======
-	Table                         string         `json:"table"`
-	Filters                       []ColumnFilter `json:"filters"`
-	TableParameterValues          map[string]any `json:"tableParameterValues,omitempty"`
-	GrafanaSql                    bool           `json:"grafanaSql"`
+	TableHintValues map[string]string `json:"tableHintValues,omitempty"`
+	GrafanaSql      bool              `json:"grafanaSql"`
 
 	// Pushdown hints — datasources MAY use these to optimize queries.
 	// The SQL engine still applies these operations on the result for correctness,
@@ -277,5 +271,4 @@ type Query struct {
 	Columns []string        `json:"columns,omitempty"` // SELECT column projection (nil = all columns)
 	OrderBy []OrderByColumn `json:"orderBy,omitempty"`
 	Limit   *int64          `json:"limit,omitempty"`
->>>>>>> main
 }
