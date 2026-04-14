@@ -43,10 +43,18 @@ func (d SQLDialect) toFlavor() sqlbuilder.Flavor {
 // Query using the specified SQL dialect. All filter conditions
 // are ANDed together. Returns an error if a filter uses an unsupported
 // operator.
+//
+// When Columns is non-empty the SELECT list is set to those columns;
+// otherwise SELECT * is used. OrderBy and Limit are appended when set.
 func (q Query) ToSQL(dialect SQLDialect) (string, error) {
 	flavor := dialect.toFlavor()
 	sb := flavor.NewSelectBuilder()
-	sb.Select("*").From(q.Table)
+
+	if len(q.Columns) > 0 {
+		sb.Select(q.Columns...).From(q.Table)
+	} else {
+		sb.Select("*").From(q.Table)
+	}
 
 	for _, filter := range q.Filters {
 		for _, cond := range filter.Conditions {
@@ -56,6 +64,18 @@ func (q Query) ToSQL(dialect SQLDialect) (string, error) {
 			}
 			sb.Where(expr)
 		}
+	}
+
+	for _, ob := range q.OrderBy {
+		if ob.Desc {
+			sb.OrderByDesc(ob.Name)
+		} else {
+			sb.OrderByAsc(ob.Name)
+		}
+	}
+
+	if q.Limit != nil && *q.Limit >= 0 {
+		sb.Limit(int(*q.Limit))
 	}
 
 	sql, args := sb.Build()

@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	apidata "github.com/grafana/grafana-plugin-sdk-go/experimental/apis/datasource/v0alpha1"
 )
 
@@ -33,16 +34,21 @@ type ColumnValuesHandler interface {
 	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
+type CommonRequest struct {
+	Headers       http.Header           `json:"-"`
+	PluginContext backend.PluginContext `json:"-"`
+}
+
 type SchemaRequest struct {
-	Headers http.Header `json:"-"`
+	CommonRequest
 }
 
 type TablesRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 }
 
 type ColumnsRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 	Tables          []string          `json:"tables"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
 }
@@ -50,7 +56,7 @@ type ColumnsRequest struct {
 // ColumnValuesRequest identifies a column whose possible values are being
 // requested, along with optional parameters to scope the result.
 type ColumnValuesRequest struct {
-	Headers         http.Header       `json:"-"`
+	CommonRequest
 	Table           string            `json:"table"`
 	Columns         []string          `json:"columns,omitempty"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
@@ -62,7 +68,7 @@ type ColumnValuesRequest struct {
 // enumerable values. Table is required because the same table parameter name may
 // have different semantics across parent tables.
 type TableParameterValuesRequest struct {
-	Headers          http.Header       `json:"-"`
+	CommonRequest
 	Table            string            `json:"table"`
 	TableParameter   string            `json:"tableParameter,omitempty"`
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`
@@ -227,6 +233,7 @@ type ColumnFilter struct {
 	Conditions []FilterCondition `json:"conditions"`
 }
 
+<<<<<<< kb/datasource-hints
 // TableHint describes a per-table execution hint that a datasource supports.
 // Hints are specified via FOR (...) clauses in SQL and control how the
 // datasource backend executes the query for a specific table — e.g.
@@ -240,10 +247,17 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
+=======
+// OrderByColumn specifies a column and sort direction for ORDER BY pushdown.
+type OrderByColumn struct {
+	Name string `json:"name"`
+	Desc bool   `json:"desc,omitempty"`
+>>>>>>> main
 }
 
 type Query struct {
 	apidata.CommonQueryProperties `json:",inline"`
+<<<<<<< kb/datasource-hints
 	Table                         string            `json:"table"`
 	Filters                       []ColumnFilter    `json:"filters"`
 	TableParameterValues          map[string]any    `json:"tableParameterValues,omitempty"`
@@ -251,4 +265,17 @@ type Query struct {
 	// Keys are uppercase hint names, values are the hint arguments (empty for flags).
 	TableHintValues               map[string]string `json:"tableHintValues,omitempty"`
 	GrafanaSql                    bool              `json:"grafanaSql"`
+=======
+	Table                         string         `json:"table"`
+	Filters                       []ColumnFilter `json:"filters"`
+	TableParameterValues          map[string]any `json:"tableParameterValues,omitempty"`
+	GrafanaSql                    bool           `json:"grafanaSql"`
+
+	// Pushdown hints — datasources MAY use these to optimize queries.
+	// The SQL engine still applies these operations on the result for correctness,
+	// so datasources that ignore them produce correct (but potentially slower) results.
+	Columns []string        `json:"columns,omitempty"` // SELECT column projection (nil = all columns)
+	OrderBy []OrderByColumn `json:"orderBy,omitempty"`
+	Limit   *int64          `json:"limit,omitempty"`
+>>>>>>> main
 }
