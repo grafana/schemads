@@ -85,6 +85,7 @@ type TablesResponse struct {
 	Tables          []string                    `json:"tables"`
 	TableParameters map[string][]TableParameter `json:"tableParameters,omitempty"`
 	TableHints      map[string][]TableHint      `json:"tableHints,omitempty"`
+	Capabilities    *DatasourceCapabilities     `json:"capabilities,omitempty"`
 	Errors          map[string]string           `json:"errors,omitempty"`
 }
 
