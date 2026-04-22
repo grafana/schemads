@@ -112,6 +112,10 @@ type Schema struct {
 	// depend on ancestor selections and must be fetched incrementally via
 	// a "tableParameterValues" request with [TableParameterValuesRequest.DependencyValues].
 	TableParameterValues map[string]map[string][]string `json:"tableParameterValues,omitempty"`
+	// Capabilities describes what SQL operations the datasource can handle
+	// natively. The SQL engine uses this to decide which operations to push
+	// down to the datasource vs execute locally.
+	Capabilities *DatasourceCapabilities `json:"capabilities,omitempty"`
 }
 
 // Table describes a single table, its columns, and optional table parameters.
@@ -247,6 +251,23 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
+}
+
+// DatasourceCapabilities describes what SQL operations a datasource can handle
+// natively. When a capability is declared, the SQL engine may push the operation
+// down to the datasource instead of executing it locally. The datasource is then
+// expected to return results as if the operation was applied.
+type DatasourceCapabilities struct {
+	// AggregateFunctions lists aggregate functions the datasource can execute
+	// natively (e.g. "SUM", "AVG", "COUNT", "MIN", "MAX"). When the SQL engine
+	// pushes an aggregation, it will not re-aggregate the result.
+	AggregateFunctions []string `json:"aggregateFunctions,omitempty"`
+
+	// OrderBy indicates the datasource can sort results natively.
+	OrderBy bool `json:"orderBy,omitempty"`
+
+	// Limit indicates the datasource can limit result count natively.
+	Limit bool `json:"limit,omitempty"`
 }
 
 // OrderByColumn specifies a column and sort direction for ORDER BY pushdown.
