@@ -202,11 +202,79 @@ Each `TableParameter` has:
 
 Call `ValidateSchema` directly to validate schemas you construct manually.
 
-### Composite keys
+### Table references (`tables`)
 
-Table parameter values in `Schema.TableParametereValues` use composite keys of the form `table_tableParameter` — e.g. `"issues_organization"`.
+Consumers that need to embed a parameterised table in a single human-writable string (for example, an internal query language that says `FROM <ref>`) can use the `tables` subpackage.
 
-> **Note:** table and table parameter names may contain underscores, making this separator ambiguous. A future version will adopt a safer delimiter once the protocol is versioned.
+A reference is an undelimited identifier of the form:
+
+```text
+<table>(<param1>=<value1>,<param2>=<value2>,...)
+```
+
+Examples:
+
+```text
+events                                   // no parameters
+events(env=prod)                         // one parameter
+events(env=prod,service=tempo)           // multiple parameters
+tags(name=Promo \(2024\))                // value with escaped reserved chars
+```
+
+The format is purely syntactic — `tables` does not produce or consume SQL. It exists so that a reference can be parsed unambiguously back into `(table, map[paramName]paramValue)` even when parameter values are user-supplied free text.
+
+The encoded form has no outer delimiters. If the surrounding system wraps references in delimiters of its own (for example, backticks in a query language), callers must add them on the way out and strip them before calling `Parse`.
+
+**Reserved characters.** Inside a table name, parameter key, or parameter value the five characters `(`, `)`, `,`, `=`, and `\` are reserved and must be backslash-escaped (`\(`, `\,`, `\\`, etc.). Any other backslash sequence is a parse error. Backticks are not reserved and are passed through verbatim.
+
+**Whitespace.** Decoding tolerates optional whitespace around `(`, `)`, `=`, and `,`, so `events(env=prod, service=tempo)` and `events(env=prod,service=tempo)` parse identically. Whitespace inside a value is preserved verbatim, but leading and trailing ASCII whitespace in a value is treated as separator padding and is not preserved across round-trips.
+
+**Empty values.** `events(env=)` decodes to `{"env": ""}` (an empty string). A key absent from the parameter list is unset, which is distinct from an empty string.
+
+**API.**
+
+```go
+import "github.com/grafana/schemads/tables"
+
+ref, err := tables.Parse("events(env=prod,service=tempo)")
+// ref.Table       -> "events"
+// ref.TableParams -> map[string]string{"env": "prod", "service": "tempo"}
+
+s := tables.TableRef{
+    Table:       "events",
+    TableParams: map[string]string{"env": "prod", "service": "tempo"},
+}.String()
+// s -> "events(env=prod,service=tempo)"   (params sorted, escaped)
+
+if err := tables.Validate(ref, schema); err != nil {
+    // ErrUnknownTable, ErrUnknownParameter, or ErrMissingRequired
+}
+```
+
+`Parse` performs only syntactic validation. Use `Validate` to check a decoded reference against a `Schema`: that the table exists, every key is a declared parameter, and every required parameter is present. See the package documentation for the full grammar.
+
+#### Legacy underscore form (best-effort fallback)
+
+Earlier consumers encoded a parameterised table as positional values appended to the table name with `_`, for example `issues_grafana_loki` for `(table=issues, organization=grafana, repository=loki)`. That form is fundamentally ambiguous — table names and values may both contain `_`, and parameter names are not encoded — and is being phased out in favour of the canonical form above.
+
+To migrate callers gradually, `tables` exposes two helpers that accept the legacy form on a best-effort, schema-aware basis:
+
+```go
+// Strict legacy decoder. Uses schema to find the longest matching table
+// name and bind trailing "_"-separated fields positionally to the table's
+// declared parameters.
+ref, err := tables.ParseLegacy("issues_grafana_loki", schema)
+
+// Dispatches by syntax:
+//   - input contains an unescaped "("  -> Parse only (canonical with params)
+//   - input has no unescaped "("        -> ParseLegacy first, then Parse
+// Joins both errors via errors.Join when the no-paren branch fails on both.
+ref, err := tables.ParseWithFallback(input, schema)
+```
+
+`ParseLegacy` will return `ErrSyntax` when no table in the schema matches the input under the positional-value rule. Parameter values containing `_` cannot be recovered correctly; new code should emit only the canonical form.
+
+The unescaped-paren heuristic is purely syntactic — `ParseWithFallback` does not inspect the schema for the canonical case. An input like `events(env=prod)` is always routed to `Parse`, and an input like `issues_grafana_loki` is always routed to `ParseLegacy` first. Callers that know which producer emitted an input should call `Parse` or `ParseLegacy` directly to skip the routing.
 
 ## Endpoints
 
