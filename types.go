@@ -254,15 +254,46 @@ type TableHint struct {
 	HasValue bool `json:"hasValue,omitempty"`
 }
 
+// AggregateFunction names an aggregation that a datasource can declare
+// support for in DatasourceCapabilities.AggregateFunctions. Only the
+// functions for which the SQL engine has a defined two-phase
+// (partial/final) decomposition can be pushed down — see the constants
+// below for the supported set. Adding a new function requires engine
+// support for its partial/final pair; declaring an unrecognised name
+// has no effect.
+type AggregateFunction string
+
+const (
+	AggregateSum   AggregateFunction = "SUM"
+	AggregateAvg   AggregateFunction = "AVG"
+	AggregateCount AggregateFunction = "COUNT"
+	AggregateMin   AggregateFunction = "MIN"
+	AggregateMax   AggregateFunction = "MAX"
+)
+
+// SupportedAggregateFunctions lists every AggregateFunction the SQL engine
+// can push down. Datasources should declare a subset of these in
+// DatasourceCapabilities.AggregateFunctions.
+var SupportedAggregateFunctions = []AggregateFunction{
+	AggregateSum,
+	AggregateAvg,
+	AggregateCount,
+	AggregateMin,
+	AggregateMax,
+}
+
 // DatasourceCapabilities describes what SQL operations a datasource can handle
 // natively. When a capability is declared, the SQL engine may push the operation
 // down to the datasource instead of executing it locally. The datasource is then
 // expected to return results as if the operation was applied.
 type DatasourceCapabilities struct {
 	// AggregateFunctions lists aggregate functions the datasource can execute
-	// natively (e.g. "SUM", "AVG", "COUNT", "MIN", "MAX"). When the SQL engine
-	// pushes an aggregation, it will not re-aggregate the result.
-	AggregateFunctions []string `json:"aggregateFunctions,omitempty"`
+	// natively. Values should be drawn from the AggregateFunction constants
+	// (AggregateSum, AggregateAvg, AggregateCount, AggregateMin, AggregateMax)
+	// — these are the only functions the SQL engine knows how to decompose
+	// for pushdown. When the SQL engine pushes an aggregation, it will not
+	// re-aggregate the result.
+	AggregateFunctions []AggregateFunction `json:"aggregateFunctions,omitempty"`
 
 	// OrderBy indicates the datasource can sort results natively.
 	OrderBy bool `json:"orderBy,omitempty"`
