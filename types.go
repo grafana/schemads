@@ -296,9 +296,19 @@ type DatasourceCapabilities struct {
 	AggregateFunctions []AggregateFunction `json:"aggregateFunctions,omitempty"`
 
 	// OrderBy indicates the datasource can sort results natively.
+	//
+	// Declared for forward compatibility: the field is not yet consulted by
+	// the SQL engine, which currently pushes ORDER BY unconditionally for
+	// single-table queries via SQL-text extraction. A future change will
+	// gate that pushdown on this flag.
 	OrderBy bool `json:"orderBy,omitempty"`
 
 	// Limit indicates the datasource can limit result count natively.
+	//
+	// Declared for forward compatibility: the field is not yet consulted by
+	// the SQL engine, which currently pushes LIMIT unconditionally for
+	// single-table queries via SQL-text extraction. A future change will
+	// gate that pushdown on this flag.
 	Limit bool `json:"limit,omitempty"`
 }
 
