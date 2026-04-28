@@ -130,14 +130,13 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		PluginContext: req.PluginContext,
 	}
 
-	endpoint := path
-	parsed, err := parseSchemaRequest(endpoint, req.Body, commonRequest)
+	parsed, err := parseSchemaRequest(path, req.Body, commonRequest)
 	if err != nil {
 		return err
 	}
 
-	ttl := ds.opts.ttlFor(endpoint)
-	scope := ds.opts.scopeFor(endpoint)
+	ttl := ds.opts.ttlFor(path)
+	scope := ds.opts.scopeFor(path)
 	logger := log.DefaultLogger.FromContext(ctx)
 
 	// Build the cache key. If we can't (e.g. ScopeUser with nil User), bypass
@@ -148,9 +147,9 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 		cacheable = ttl > 0 && ds.cache != nil
 	)
 	if cacheable {
-		k, err := buildKey(req.PluginContext, scope, endpoint, parsed.keyParts)
+		k, err := cache.KeyFromPluginContext(req.PluginContext, scope, path, parsed.keyParts...)
 		if err != nil {
-			logger.Warn("schemads: cache bypassed", "endpoint", endpoint, "scope", scope, "err", err)
+			logger.Warn("schemads: cache bypassed", "endpoint", path, "scope", scope, "err", err)
 		} else {
 			key = k
 			keyOK = true
@@ -163,18 +162,18 @@ func (ds *SchemaDatasource) handleSchemaResource(ctx context.Context, req *backe
 	// could be built (otherwise there's nothing to invalidate).
 	if cacheable && keyOK && ds.opts.Refresh.Header != "" {
 		if v := req.GetHTTPHeader(ds.opts.Refresh.Header); v != "" {
-			if ds.allowRefresh(req.PluginContext.Namespace, endpoint) {
+			if ds.allowRefresh(req.PluginContext.Namespace, path) {
 				ds.cache.Delete(ctx, key)
 			}
 		}
 	}
 
 	fetch := func(ctx context.Context) ([]byte, error) {
-		return ds.dispatch(ctx, endpoint, sender, parsed)
+		return ds.dispatch(ctx, path, sender, parsed)
 	}
 	var data []byte
 	if cacheable && keyOK {
-		data, err = cache.GetOrFetchBytes(ctx, ds.cache, key, endpoint, ttl, fetch)
+		data, err = cache.GetOrFetchBytes(ctx, ds.cache, key, path, ttl, fetch)
 	} else {
 		data, err = fetch(ctx)
 	}
@@ -251,12 +250,6 @@ func (ds *SchemaDatasource) dispatch(ctx context.Context, endpoint string, sende
 			Body:   []byte(ErrSchemaNotImplemented.Error()),
 		})
 	}
-}
-
-// buildKey assembles the cache key for an endpoint from the minimal typed
-// fields that affect the response. Headers and PluginContext are never hashed.
-func buildKey(pc backend.PluginContext, scope cache.Scope, endpoint string, parts []string) (cache.Key, error) {
-	return cache.KeyFromPluginContext(pc, scope, endpoint, parts...)
 }
 
 func parseSchemaRequest(endpoint string, body []byte, common *CommonRequest) (*parsedSchemaRequest, error) {

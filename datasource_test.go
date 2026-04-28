@@ -45,19 +45,6 @@ func (h *stubTablesHandler) Tables(ctx context.Context, req *TablesRequest) (*Ta
 	return &TablesResponse{Tables: []string{"t1", "t2"}}, nil
 }
 
-type stubColumnsHandler struct {
-	calls int32
-	fn    func(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error)
-}
-
-func (h *stubColumnsHandler) Columns(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error) {
-	atomic.AddInt32(&h.calls, 1)
-	if h.fn != nil {
-		return h.fn(ctx, req)
-	}
-	return &ColumnsResponse{Columns: map[string][]Column{"t1": {{Name: "c1", Type: ColumnTypeString}}}}, nil
-}
-
 type stubColumnValuesHandler struct {
 	calls int32
 }
