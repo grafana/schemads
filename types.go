@@ -85,6 +85,7 @@ type TablesResponse struct {
 	Tables          []string                    `json:"tables"`
 	TableParameters map[string][]TableParameter `json:"tableParameters,omitempty"`
 	TableHints      map[string][]TableHint      `json:"tableHints,omitempty"`
+	Capabilities    *DatasourceCapabilities     `json:"capabilities,omitempty"`
 	Errors          map[string]string           `json:"errors,omitempty"`
 }
 
@@ -112,6 +113,10 @@ type Schema struct {
 	// depend on ancestor selections and must be fetched incrementally via
 	// a "tableParameterValues" request with [TableParameterValuesRequest.DependencyValues].
 	TableParameterValues map[string]map[string][]string `json:"tableParameterValues,omitempty"`
+	// Capabilities describes what SQL operations the datasource can handle
+	// natively. The SQL engine uses this to decide which operations to push
+	// down to the datasource vs execute locally.
+	Capabilities *DatasourceCapabilities `json:"capabilities,omitempty"`
 }
 
 // Table describes a single table, its columns, and optional table parameters.
@@ -247,6 +252,64 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
+}
+
+// AggregateFunction names an aggregation that a datasource can declare
+// support for in DatasourceCapabilities.AggregateFunctions. Only the
+// functions for which the SQL engine has a defined two-phase
+// (partial/final) decomposition can be pushed down — see the constants
+// below for the supported set. Adding a new function requires engine
+// support for its partial/final pair; declaring an unrecognised name
+// has no effect.
+type AggregateFunction string
+
+const (
+	AggregateSum   AggregateFunction = "SUM"
+	AggregateAvg   AggregateFunction = "AVG"
+	AggregateCount AggregateFunction = "COUNT"
+	AggregateMin   AggregateFunction = "MIN"
+	AggregateMax   AggregateFunction = "MAX"
+)
+
+// SupportedAggregateFunctions lists every AggregateFunction the SQL engine
+// can push down. Datasources should declare a subset of these in
+// DatasourceCapabilities.AggregateFunctions.
+var SupportedAggregateFunctions = []AggregateFunction{
+	AggregateSum,
+	AggregateAvg,
+	AggregateCount,
+	AggregateMin,
+	AggregateMax,
+}
+
+// DatasourceCapabilities describes what SQL operations a datasource can handle
+// natively. When a capability is declared, the SQL engine may push the operation
+// down to the datasource instead of executing it locally. The datasource is then
+// expected to return results as if the operation was applied.
+type DatasourceCapabilities struct {
+	// AggregateFunctions lists aggregate functions the datasource can execute
+	// natively. Values should be drawn from the AggregateFunction constants
+	// (AggregateSum, AggregateAvg, AggregateCount, AggregateMin, AggregateMax)
+	// — these are the only functions the SQL engine knows how to decompose
+	// for pushdown. When the SQL engine pushes an aggregation, it will not
+	// re-aggregate the result.
+	AggregateFunctions []AggregateFunction `json:"aggregateFunctions,omitempty"`
+
+	// OrderBy indicates the datasource can sort results natively.
+	//
+	// Declared for forward compatibility: the field is not yet consulted by
+	// the SQL engine, which currently pushes ORDER BY unconditionally for
+	// single-table queries via SQL-text extraction. A future change will
+	// gate that pushdown on this flag.
+	OrderBy bool `json:"orderBy,omitempty"`
+
+	// Limit indicates the datasource can limit result count natively.
+	//
+	// Declared for forward compatibility: the field is not yet consulted by
+	// the SQL engine, which currently pushes LIMIT unconditionally for
+	// single-table queries via SQL-text extraction. A future change will
+	// gate that pushdown on this flag.
+	Limit bool `json:"limit,omitempty"`
 }
 
 // OrderByColumn specifies a column and sort direction for ORDER BY pushdown.
