@@ -72,19 +72,4 @@
 // decoded reference against a [github.com/grafana/schemads.Schema]: that the
 // table exists, that all parameter keys are declared on that table, and that
 // every required parameter is present.
-//
-// # Legacy underscore form
-//
-// Earlier consumers encoded a parameterised table as
-// "<table>_<value1>_<value2>_..." with positional parameter values. That
-// form is fundamentally ambiguous — table names and values may both contain
-// underscores — and is being phased out. [ParseLegacy] decodes it on a
-// best-effort basis using the schema to resolve which prefix is the table
-// and how many trailing fields are values.
-//
-// [ParseWithFallback] dispatches between the two forms by inspecting the
-// input for an unescaped "(": if one is present the input is canonical
-// syntax with a parameter list and is routed to [Parse]; otherwise the
-// input is routed to [ParseLegacy] first (the more specific
-// interpretation) with a fallback to [Parse] for the no-parameters case.
 package tables
