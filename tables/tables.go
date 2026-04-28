@@ -10,8 +10,9 @@ import (
 )
 
 // TableRef is a parameterised reference to a table. The zero value encodes
-// as the empty string; callers should typically construct one via [Parse]
-// or by populating Table (and optionally TableParams) directly.
+// as the empty string, but that string is not accepted by [Parse]; callers
+// should typically construct one via [Parse] or by populating Table (and
+// optionally TableParams) directly.
 //
 // The encoded form does not include any outer delimiters. If the surrounding
 // system wraps references in delimiters (for example, backticks in a query
@@ -32,7 +33,8 @@ var (
 	ErrDuplicateKey     = errors.New("tables: duplicate parameter key")
 )
 
-// String returns the canonical encoded form of the reference, suitable for
+// String returns the canonical encoded form of the reference. References with
+// a non-empty table name and non-empty parameter keys are suitable for
 // round-tripping through [Parse]. The output has no outer delimiters:
 // callers that need to embed the reference in a larger grammar (for
 // example, wrapping in backticks) must add those delimiters themselves.
@@ -41,7 +43,8 @@ var (
 // whitespace; reserved characters in the table name, keys, and values are
 // backslash-escaped.
 //
-// String never returns a malformed reference for any [TableRef] value.
+// String does not validate TableRef; an empty table name or empty parameter
+// key will produce output that [Parse] rejects.
 func (r TableRef) String() string {
 	var sb strings.Builder
 	writeEscaped(&sb, r.Table)
@@ -71,9 +74,8 @@ func (r TableRef) String() string {
 // those before calling Parse. See the package documentation for the full
 // grammar.
 //
-// An empty input decodes to the zero [TableRef] (an empty table name with
-// no parameters); semantic checks such as table existence are deferred to
-// [Validate].
+// The table name must be non-empty. Semantic checks such as table existence
+// are deferred to [Validate].
 //
 // Parse performs only syntactic validation: it does not check whether the
 // table or its parameters exist in any schema. Use [Validate] for that.
@@ -85,6 +87,9 @@ func Parse(s string) (TableRef, error) {
 		return TableRef{}, err
 	}
 	table = strings.TrimRight(table, " \t")
+	if table == "" {
+		return TableRef{}, p.errf("empty table name")
+	}
 	ref := TableRef{Table: table}
 
 	if p.pos == len(p.src) {

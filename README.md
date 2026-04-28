@@ -206,7 +206,7 @@ Call `ValidateSchema` directly to validate schemas you construct manually.
 
 Consumers that need to embed a parameterised table in a single human-writable string (for example, an internal query language that says `FROM <ref>`) can use the `tables` subpackage.
 
-A reference is an undelimited identifier of the form:
+A reference is an undelimited identifier with a non-empty table name:
 
 ```text
 <table>(<param1>=<value1>,<param2>=<value2>,...)
@@ -251,7 +251,7 @@ if err := tables.Validate(ref, schema); err != nil {
 }
 ```
 
-`Parse` performs only syntactic validation. Use `Validate` to check a decoded reference against a `Schema`: that the table exists, every key is a declared parameter, and every required parameter is present. See the package documentation for the full grammar.
+`Parse` performs only syntactic validation. It requires a non-empty table name, but does not check whether that table exists. Use `Validate` to check a decoded reference against a `Schema`: that the table exists, every key is a declared parameter, and every required parameter is present. See the package documentation for the full grammar.
 
 #### Legacy underscore form (best-effort fallback)
 

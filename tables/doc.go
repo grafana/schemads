@@ -7,10 +7,11 @@
 //
 //	<table>(<key1>=<value1>,<key2>=<value2>,...)
 //
-// The parameter list is optional; both `events` and `events()` decode to a
-// reference with zero parameters. Values are user-supplied free text; names
-// (table and parameter keys) are typically constrained by the producing
-// schema but the format itself imposes no character restrictions on them.
+// The table name is required. The parameter list is optional; both `events`
+// and `events()` decode to a reference with zero parameters. Values are
+// user-supplied free text; names (table and parameter keys) are typically
+// constrained by the producing schema but the format itself imposes no
+// character restrictions on them beyond requiring a non-empty table name.
 //
 // The format does not include any outer delimiters. If the surrounding
 // system wraps a reference in delimiters (for example, backticks in a
@@ -20,7 +21,7 @@
 // # Grammar
 //
 //	ref          = table [ "(" params ")" ]
-//	table        = chars
+//	table        = chars ; non-empty after trimming separator whitespace
 //	params       = pair { "," [ ws ] pair }
 //	pair         = key [ ws ] "=" [ ws ] value
 //	key          = chars

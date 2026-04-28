@@ -26,11 +26,6 @@ func TestParse(t *testing.T) {
 			want: tables.TableRef{Table: "events"},
 		},
 		{
-			name: "empty input decodes to empty table",
-			in:   "",
-			want: tables.TableRef{Table: ""},
-		},
-		{
 			name: "empty parameter list",
 			in:   "events()",
 			want: tables.TableRef{Table: "events", TableParams: map[string]string{}},
@@ -54,6 +49,11 @@ func TestParse(t *testing.T) {
 			name: "empty value",
 			in:   "events(env=)",
 			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": ""}},
+		},
+		{
+			name: "empty value before another parameter",
+			in:   "events(env=,foo=bar)",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "", "foo": "bar"}},
 		},
 		{
 			name: "value with escaped parens",
@@ -116,6 +116,9 @@ func TestParseErrors(t *testing.T) {
 		in      string
 		wantErr error
 	}{
+		{name: "empty input", in: "", wantErr: tables.ErrSyntax},
+		{name: "empty table with params", in: "(a=1)", wantErr: tables.ErrSyntax},
+		{name: "empty table with empty params", in: "()", wantErr: tables.ErrSyntax},
 		{name: "unterminated parameter list", in: "events(a=1", wantErr: tables.ErrSyntax},
 		{name: "trailing data after closing paren", in: "events(a=1)x", wantErr: tables.ErrSyntax},
 		{name: "duplicate parameter key", in: "t(a=1,a=2)", wantErr: tables.ErrDuplicateKey},
@@ -210,10 +213,11 @@ func TestRoundTrip(t *testing.T) {
 		return first == ' ' || first == '\t' || last == ' ' || last == '\t'
 	}
 
-	// Property: for any TableRef with non-empty keys and no leading/trailing
-	// ASCII whitespace in any name or value, Parse(ref.String()) == ref.
+	// Property: for any TableRef with a non-empty table, non-empty keys, and no
+	// leading/trailing ASCII whitespace in any name or value,
+	// Parse(ref.String()) == ref.
 	property := func(table string, paramKeys []string, paramVals []string) bool {
-		if hasEdgeWS(table) {
+		if table == "" || hasEdgeWS(table) {
 			return true
 		}
 		if len(paramKeys) > 8 {
@@ -287,7 +291,6 @@ func TestRoundTripFixedCases(t *testing.T) {
 	// A handful of explicitly-chosen tricky inputs in addition to the
 	// random property test.
 	cases := []tables.TableRef{
-		{Table: ""},
 		{Table: "t"},
 		{Table: "t", TableParams: map[string]string{"k": ""}},
 		{Table: "t", TableParams: map[string]string{"": ""}}, // pathological key, should still encode but Parse rejects
@@ -462,7 +465,7 @@ func TestParseLegacy(t *testing.T) {
 			name: "table with two params",
 			in:   "issues_grafana_loki",
 			want: tables.TableRef{
-				Table:  "issues",
+				Table:       "issues",
 				TableParams: map[string]string{"organization": "grafana", "repository": "loki"},
 			},
 		},
@@ -470,7 +473,7 @@ func TestParseLegacy(t *testing.T) {
 			name: "table name containing underscore wins over shorter prefix",
 			in:   "pull_requests_grafana_loki",
 			want: tables.TableRef{
-				Table:  "pull_requests",
+				Table:       "pull_requests",
 				TableParams: map[string]string{"organization": "grafana", "repository": "loki"},
 			},
 		},
@@ -478,7 +481,7 @@ func TestParseLegacy(t *testing.T) {
 			name: "longest table name preferred when both prefixes match",
 			in:   "issues_grafana_loki", // also a valid 1-param parse for "iss" (value "grafana_loki" wouldn't split right) - so this only matches "issues"
 			want: tables.TableRef{
-				Table:  "issues",
+				Table:       "issues",
 				TableParams: map[string]string{"organization": "grafana", "repository": "loki"},
 			},
 		},
@@ -486,7 +489,7 @@ func TestParseLegacy(t *testing.T) {
 			name: "single-param table prefixed name",
 			in:   "iss_alpha",
 			want: tables.TableRef{
-				Table:  "iss",
+				Table:       "iss",
 				TableParams: map[string]string{"tag": "alpha"},
 			},
 		},
@@ -494,7 +497,7 @@ func TestParseLegacy(t *testing.T) {
 			name: "empty value preserved as empty string",
 			in:   "issues_grafana_",
 			want: tables.TableRef{
-				Table:  "issues",
+				Table:       "issues",
 				TableParams: map[string]string{"organization": "grafana", "repository": ""},
 			},
 		},
