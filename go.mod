@@ -5,7 +5,11 @@ go 1.25.7
 require (
 	github.com/grafana/grafana-plugin-sdk-go v0.292.0
 	github.com/huandu/go-sqlbuilder v1.39.1
+	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/prometheus/client_golang v1.23.2
+	github.com/prometheus/client_model v0.6.2
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -64,8 +68,6 @@ require (
 	github.com/olekukonko/tablewriter v1.1.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
@@ -86,7 +88,6 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260209163413-e7419c687ee4 // indirect
 	golang.org/x/text v0.35.0 // indirect
