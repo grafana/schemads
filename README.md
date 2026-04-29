@@ -204,11 +204,79 @@ Each `TableParameter` has:
 
 Call `ValidateSchema` directly to validate schemas you construct manually.
 
-### Composite keys
+### Table references (`tables`)
 
-Table parameter values in `Schema.TableParametereValues` use composite keys of the form `table_tableParameter` — e.g. `"issues_organization"`.
+Consumers that need to embed a parameterised table in a single human-writable string (for example, an internal query language that says `FROM <ref>`) can use the `tables` subpackage.
 
-> **Note:** table and table parameter names may contain underscores, making this separator ambiguous. A future version will adopt a safer delimiter once the protocol is versioned.
+A reference is an undelimited identifier with a non-empty table name:
+
+```text
+<table>(<param1>=<value1>,<param2>=<value2>,...)
+```
+
+Examples:
+
+```text
+events                                   // no parameters
+events(env=prod)                         // one parameter
+events(env=prod,service=tempo)           // multiple parameters
+tags(name=Promo \(2024\))                // value with escaped reserved chars
+```
+
+The format is purely syntactic — `tables` does not produce or consume SQL. It exists so that a reference can be parsed unambiguously back into `(table, map[paramName]paramValue)` even when parameter values are user-supplied free text.
+
+The encoded form has no outer delimiters. If the surrounding system wraps references in delimiters of its own (for example, backticks in a query language), callers must add them on the way out and strip them before calling `Parse`. See [Embedding in a wider grammar](#embedding-in-a-wider-grammar) below for the standard backtick recipe.
+
+**Reserved characters.** Inside a table name, parameter key, or parameter value the five characters `(`, `)`, `,`, `=`, and `\` are reserved and must be backslash-escaped (`\(`, `\,`, `\\`, etc.). Any other backslash sequence is a parse error. Backticks are not reserved and are passed through verbatim.
+
+**Whitespace.** Outer whitespace (any Unicode whitespace before or after the entire reference) is trimmed by `Parse`. Inside the reference, decoding tolerates optional whitespace around `(`, `)`, `=`, and `,`, so `events(env=prod, service=tempo)` and `events(env=prod,service=tempo)` parse identically. Whitespace inside a value is preserved verbatim, but leading and trailing ASCII whitespace in a value is treated as separator padding and is not preserved across round-trips.
+
+**Empty values and empty parameter lists.** `events(env=)` decodes to `{"env": ""}` (an empty string). A key absent from the parameter list is unset, which is distinct from an empty string. An empty parameter list is normalised: both `events` and `events()` decode to a `TableRef` with `TableParams == nil`, and a `TableRef` with no parameters always renders as just the table name (no trailing parens).
+
+**API.**
+
+```go
+import "github.com/grafana/schemads/tables"
+
+ref, err := tables.Parse("events(env=prod,service=tempo)")
+// ref.Table       -> "events"
+// ref.TableParams -> map[string]string{"env": "prod", "service": "tempo"}
+
+s := tables.TableRef{
+    Table:       "events",
+    TableParams: map[string]string{"env": "prod", "service": "tempo"},
+}.String()
+// s -> "events(env=prod,service=tempo)"   (params sorted, escaped)
+
+if err := tables.Validate(ref, schema); err != nil {
+    // joined error: ErrUnknownTable, ErrUnknownParameter,
+    // ErrMissingRequired, and/or ErrMissingDependency.
+}
+```
+
+`Parse` performs only syntactic validation. It requires a non-empty table name, but does not check whether that table exists. Use `Validate` to check a decoded reference against a `Schema`: that the table exists, every key is a declared parameter, every required parameter is present, and every present parameter's declared dependencies are also present. `Validate` aggregates all issues into a single `errors.Join` error so callers see every problem in one pass. See the package documentation for the full grammar.
+
+#### Canonical form
+
+The decoder is intentionally lenient (whitespace around separators, `events()` accepted for a no-parameter reference, etc.) while the encoder is strict (parameters sorted, no whitespace, empty parameter lists collapsed). Two raw inputs that mean the same thing are not necessarily byte-equal. Use `tables.Canonicalize` to normalise a reference before using it as a map key, cache key, or identity comparison value:
+
+```go
+canon, err := tables.Canonicalize(rawInput) // == Parse(rawInput).String()
+```
+
+#### Embedding in a wider grammar
+
+References produced by this package have no outer delimiters. When a consumer wraps a reference in its own delimiters — for example a query language that uses backticks — that consumer is responsible for escaping its delimiter inside the wrapped content, because the inner format does not reserve any characters for that purpose. In particular, backticks may appear unescaped inside a parameter value.
+
+`tables.WrapInBackticks` and `tables.UnwrapFromBackticks` implement the standard double-the-delimiter recipe used by SQL identifier quoting (`` ` `` → `` `` ``):
+
+```go
+stored := tables.WrapInBackticks(ref.String())     // "`events(env=prod)`"
+inner, err := tables.UnwrapFromBackticks(stored)   // "events(env=prod)"
+ref, err   := tables.Parse(inner)
+```
+
+Any backtick inside `ref.String()` is doubled on the way out and un-doubled on the way in, so the round-trip preserves arbitrary inner content (including parameter values that legitimately contain backticks).
 
 ## Endpoints
 

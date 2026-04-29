@@ -1,0 +1,588 @@
+package tables_test
+
+import (
+	"errors"
+	"testing"
+	"testing/quick"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	schemads "github.com/grafana/schemads"
+	"github.com/grafana/schemads/tables"
+)
+
+func TestParse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want tables.TableRef
+	}{
+		{
+			name: "table only",
+			in:   "events",
+			want: tables.TableRef{Table: "events"},
+		},
+		{
+			name: "empty parameter list normalises to nil",
+			in:   "events()",
+			want: tables.TableRef{Table: "events"},
+		},
+		{
+			name: "outer whitespace is trimmed",
+			in:   "  events(env=prod)  ",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod"}},
+		},
+		{
+			name: "outer whitespace includes newlines and tabs",
+			in:   "\t\nevents\n",
+			want: tables.TableRef{Table: "events"},
+		},
+		{
+			name: "single parameter",
+			in:   "events(env=prod)",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod"}},
+		},
+		{
+			name: "multiple parameters",
+			in:   "events(env=prod,service=tempo)",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod", "service": "tempo"}},
+		},
+		{
+			name: "tolerates whitespace around separators",
+			in:   "events( env = prod , service = tempo )",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod", "service": "tempo"}},
+		},
+		{
+			name: "empty value",
+			in:   "events(env=)",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": ""}},
+		},
+		{
+			name: "empty value before another parameter",
+			in:   "events(env=,foo=bar)",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "", "foo": "bar"}},
+		},
+		{
+			name: "value with escaped parens",
+			in:   "tags(name=Promo \\(2024\\))",
+			want: tables.TableRef{Table: "tags", TableParams: map[string]string{"name": "Promo (2024)"}},
+		},
+		{
+			name: "value with escaped comma",
+			in:   "t(k=a\\,b)",
+			want: tables.TableRef{Table: "t", TableParams: map[string]string{"k": "a,b"}},
+		},
+		{
+			name: "value with escaped equals",
+			in:   "t(k=a\\=b)",
+			want: tables.TableRef{Table: "t", TableParams: map[string]string{"k": "a=b"}},
+		},
+		{
+			name: "value with escaped backslash",
+			in:   "t(k=a\\\\b)",
+			want: tables.TableRef{Table: "t", TableParams: map[string]string{"k": `a\b`}},
+		},
+		{
+			name: "value with literal backtick is unescaped",
+			in:   "t(k=a`b)",
+			want: tables.TableRef{Table: "t", TableParams: map[string]string{"k": "a`b"}},
+		},
+		{
+			name: "value preserves internal whitespace",
+			in:   "t(k=foo bar)",
+			want: tables.TableRef{Table: "t", TableParams: map[string]string{"k": "foo bar"}},
+		},
+		{
+			name: "value preserves multibyte runes",
+			in:   "metrics(unit=µs,note=π)",
+			want: tables.TableRef{Table: "metrics", TableParams: map[string]string{"unit": "µs", "note": "π"}},
+		},
+		{
+			name: "table name with escaped reserved char",
+			in:   "weird\\(name(a=1)",
+			want: tables.TableRef{Table: "weird(name", TableParams: map[string]string{"a": "1"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := tables.Parse(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want.Table, got.Table)
+			assert.Equal(t, tc.want.TableParams, got.TableParams)
+		})
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		wantErr error
+	}{
+		{name: "empty input", in: "", wantErr: tables.ErrSyntax},
+		{name: "all whitespace input", in: "   \t\n  ", wantErr: tables.ErrSyntax},
+		{name: "empty table with params", in: "(a=1)", wantErr: tables.ErrSyntax},
+		{name: "empty table with empty params", in: "()", wantErr: tables.ErrSyntax},
+		{name: "unterminated parameter list", in: "events(a=1", wantErr: tables.ErrSyntax},
+		{name: "trailing data after closing paren", in: "events(a=1)x", wantErr: tables.ErrSyntax},
+		{name: "duplicate parameter key", in: "t(a=1,a=2)", wantErr: tables.ErrDuplicateKey},
+		{name: "empty key", in: "t(=v)", wantErr: tables.ErrSyntax},
+		{name: "missing equals", in: "t(a)", wantErr: tables.ErrSyntax},
+		{name: "invalid escape sequence in value", in: "t(k=a\\xb)", wantErr: tables.ErrSyntax},
+		{name: "dangling backslash in value", in: "t(k=a\\)", wantErr: tables.ErrSyntax},
+		{name: "unescaped equals in table name", in: "weird=name(a=1)", wantErr: tables.ErrSyntax},
+		{name: "unescaped paren in value", in: "t(k=a(b)", wantErr: tables.ErrSyntax},
+		{name: "unexpected text after table name without paren", in: "events,extra", wantErr: tables.ErrSyntax},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := tables.Parse(tc.in)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tc.wantErr, "got error: %v", err)
+		})
+	}
+}
+
+func TestTableRefString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   tables.TableRef
+		want string
+	}{
+		{
+			name: "empty ref",
+			in:   tables.TableRef{},
+			want: "",
+		},
+		{
+			name: "table only",
+			in:   tables.TableRef{Table: "events"},
+			want: "events",
+		},
+		{
+			name: "empty params map collapses",
+			in:   tables.TableRef{Table: "events", TableParams: map[string]string{}},
+			want: "events",
+		},
+		{
+			name: "single param",
+			in:   tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod"}},
+			want: "events(env=prod)",
+		},
+		{
+			name: "params sorted alphabetically",
+			in:   tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo", "env": "prod"}},
+			want: "events(env=prod,service=tempo)",
+		},
+		{
+			name: "escapes reserved chars in value",
+			in:   tables.TableRef{Table: "tags", TableParams: map[string]string{"name": "Promo (2024)"}},
+			want: "tags(name=Promo \\(2024\\))",
+		},
+		{
+			name: "escapes reserved chars in table and key",
+			in:   tables.TableRef{Table: "weird(name", TableParams: map[string]string{"a=b": "v"}},
+			want: "weird\\(name(a\\=b=v)",
+		},
+		{
+			name: "escapes backslash but leaves backtick literal",
+			in:   tables.TableRef{Table: "t", TableParams: map[string]string{"k": "a\\b`c"}},
+			want: "t(k=a\\\\b`c)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, tc.in.String())
+		})
+	}
+}
+
+func TestRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// hasEdgeWS reports whether s starts or ends with ASCII whitespace.
+	// Such values are not round-trippable: the lenient parser strips
+	// leading/trailing whitespace as separator padding (documented).
+	hasEdgeWS := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		first, last := s[0], s[len(s)-1]
+		return first == ' ' || first == '\t' || last == ' ' || last == '\t'
+	}
+
+	// Property: for any TableRef with a non-empty table, non-empty keys, and no
+	// leading/trailing ASCII whitespace in any name or value,
+	// Parse(ref.String()) == ref.
+	property := func(table string, paramKeys []string, paramVals []string) bool {
+		if table == "" || hasEdgeWS(table) {
+			return true
+		}
+		if len(paramKeys) > 8 {
+			paramKeys = paramKeys[:8]
+		}
+		if len(paramVals) < len(paramKeys) {
+			return true // shrink to a representable shape
+		}
+		params := make(map[string]string, len(paramKeys))
+		for i, k := range paramKeys {
+			if k == "" || hasEdgeWS(k) || hasEdgeWS(paramVals[i]) {
+				return true
+			}
+			params[k] = paramVals[i]
+		}
+
+		ref := tables.TableRef{Table: table}
+		if len(params) > 0 {
+			ref.TableParams = params
+		}
+		out := ref.String()
+		got, err := tables.Parse(out)
+		if err != nil {
+			t.Logf("Parse(%q) returned error: %v", out, err)
+			return false
+		}
+		if got.Table != ref.Table {
+			t.Logf("table mismatch: got %q want %q (encoded %q)", got.Table, ref.Table, out)
+			return false
+		}
+		if len(got.TableParams) != len(ref.TableParams) {
+			t.Logf("params length mismatch: got %v want %v (encoded %q)", got.TableParams, ref.TableParams, out)
+			return false
+		}
+		for k, v := range ref.TableParams {
+			gv, ok := got.TableParams[k]
+			if !ok || gv != v {
+				t.Logf("param %q mismatch: got %q want %q (encoded %q)", k, gv, v, out)
+				return false
+			}
+		}
+		return true
+	}
+
+	if err := quick.Check(property, &quick.Config{MaxCount: 1000}); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestEdgeWhitespaceLimitation(t *testing.T) {
+	t.Parallel()
+
+	// Document the round-trip limitation explicitly: leading/trailing ASCII
+	// whitespace inside a value is treated as separator padding by the
+	// lenient parser and is not preserved. Internal whitespace is preserved.
+	in := tables.TableRef{Table: "t", TableParams: map[string]string{"k": "  v  "}}
+	out := in.String()
+	got, err := tables.Parse(out)
+	require.NoError(t, err)
+	assert.Equal(t, "v", got.TableParams["k"], "leading/trailing whitespace is stripped")
+
+	in = tables.TableRef{Table: "t", TableParams: map[string]string{"k": "a  b"}}
+	got, err = tables.Parse(in.String())
+	require.NoError(t, err)
+	assert.Equal(t, "a  b", got.TableParams["k"], "internal whitespace is preserved")
+}
+
+func TestRoundTripFixedCases(t *testing.T) {
+	t.Parallel()
+
+	// A handful of explicitly-chosen tricky inputs in addition to the
+	// random property test.
+	cases := []tables.TableRef{
+		{Table: "t"},
+		{Table: "t", TableParams: map[string]string{"k": ""}},
+		{Table: "t", TableParams: map[string]string{"": ""}}, // pathological key, should still encode but Parse rejects
+		{Table: "tab,le", TableParams: map[string]string{"k(=)": "v\\`,()=v"}},
+		{Table: "µ", TableParams: map[string]string{"π": "3.14159"}},
+		{Table: "t", TableParams: map[string]string{"a": "1", "b": "2", "c": "3"}},
+	}
+	for i, ref := range cases {
+		out := ref.String()
+		got, err := tables.Parse(out)
+		// TableRefs with an empty parameter key are not parseable (empty key is
+		// rejected). Skip the round-trip assertion in that case but make
+		// sure the parser does reject as expected.
+		if _, hasEmpty := ref.TableParams[""]; hasEmpty {
+			require.ErrorIs(t, err, tables.ErrSyntax, "case %d: %#v -> %q", i, ref, out)
+			continue
+		}
+		require.NoError(t, err, "case %d: %#v -> %q", i, ref, out)
+		assert.Equal(t, ref.Table, got.Table, "case %d", i)
+		// Empty TableParams (nil or empty map) round-trips to nil because the
+		// encoder omits the parameter list when there are no parameters and
+		// the parser normalises an absent or empty parameter list to nil.
+		if len(ref.TableParams) == 0 {
+			assert.Nil(t, got.TableParams, "case %d", i)
+			continue
+		}
+		assert.Equal(t, ref.TableParams, got.TableParams, "case %d", i)
+	}
+}
+
+func validateSchema() *schemads.Schema {
+	return &schemads.Schema{
+		Tables: []schemads.Table{
+			{
+				Name: "events",
+				TableParameters: []schemads.TableParameter{
+					{Name: "service", Root: true, Required: true},
+					{Name: "env", Root: true},
+					// instance is optional but depends on env, exercising
+					// the dependency check on optional non-root params.
+					{Name: "instance", DependsOn: []string{"env"}},
+				},
+			},
+		},
+	}
+}
+
+func TestValidate(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
+
+	tests := []struct {
+		name    string
+		ref     tables.TableRef
+		wantErr error
+	}{
+		{
+			name: "valid with required only",
+			ref:  tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo"}},
+		},
+		{
+			name: "valid with required and optional",
+			ref:  tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo", "env": "prod"}},
+		},
+		{
+			name: "valid with full dependency chain",
+			ref: tables.TableRef{Table: "events", TableParams: map[string]string{
+				"service": "tempo", "env": "prod", "instance": "i1",
+			}},
+		},
+		{
+			name:    "unknown table",
+			ref:     tables.TableRef{Table: "missing", TableParams: map[string]string{"service": "tempo"}},
+			wantErr: tables.ErrUnknownTable,
+		},
+		{
+			name:    "missing required",
+			ref:     tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod"}},
+			wantErr: tables.ErrMissingRequired,
+		},
+		{
+			name:    "unknown parameter",
+			ref:     tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo", "bogus": "x"}},
+			wantErr: tables.ErrUnknownParameter,
+		},
+		{
+			name: "missing dependency",
+			ref: tables.TableRef{Table: "events", TableParams: map[string]string{
+				"service": "tempo", "instance": "i1", // instance requires env
+			}},
+			wantErr: tables.ErrMissingDependency,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tables.Validate(tc.ref, schema)
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, tc.wantErr), "want %v, got %v", tc.wantErr, err)
+		})
+	}
+}
+
+func TestValidateAggregatesErrors(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
+
+	// A reference that violates three rules simultaneously:
+	//   - missing required "service"
+	//   - "instance" present but its dependency "env" missing
+	//   - "bogus" is not a declared parameter
+	ref := tables.TableRef{
+		Table: "events",
+		TableParams: map[string]string{
+			"instance": "i1",
+			"bogus":    "x",
+		},
+	}
+
+	err := tables.Validate(ref, schema)
+	require.Error(t, err)
+
+	// Every component sentinel must be matchable on the joined error.
+	assert.ErrorIs(t, err, tables.ErrUnknownParameter)
+	assert.ErrorIs(t, err, tables.ErrMissingRequired)
+	assert.ErrorIs(t, err, tables.ErrMissingDependency)
+
+	// errors.Join exposes its components via Unwrap() []error. Verify the
+	// expected ordering: unknown params first (sorted by key), then
+	// missing-required (in declaration order), then missing-dependency
+	// (sorted by key). With the inputs above we expect 3 components.
+	joined, ok := err.(interface{ Unwrap() []error })
+	require.True(t, ok, "expected errors.Join error, got %T", err)
+	parts := joined.Unwrap()
+	require.Len(t, parts, 3)
+	assert.ErrorIs(t, parts[0], tables.ErrUnknownParameter)
+	assert.Contains(t, parts[0].Error(), `"bogus"`)
+	assert.ErrorIs(t, parts[1], tables.ErrMissingRequired)
+	assert.Contains(t, parts[1].Error(), `"service"`)
+	assert.ErrorIs(t, parts[2], tables.ErrMissingDependency)
+	assert.Contains(t, parts[2].Error(), `"instance"`)
+	assert.Contains(t, parts[2].Error(), `"env"`)
+}
+
+func TestValidateUnknownTableShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
+
+	// Unknown table is fatal; we should NOT see any other component errors
+	// joined alongside it. Confirms the documented short-circuit behaviour.
+	ref := tables.TableRef{
+		Table: "nope",
+		TableParams: map[string]string{
+			"bogus": "x", // would also be an unknown-parameter error if checked
+		},
+	}
+	err := tables.Validate(ref, schema)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, tables.ErrUnknownTable)
+	_, joined := err.(interface{ Unwrap() []error })
+	assert.False(t, joined, "unknown-table error should not be a joined error: %v", err)
+}
+
+func TestValidateNilSchema(t *testing.T) {
+	t.Parallel()
+	err := tables.Validate(tables.TableRef{Table: "x"}, nil)
+	require.Error(t, err)
+}
+
+func TestCanonicalize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "strips inner whitespace and sorts keys",
+			in:   "events( service = tempo , env = prod )",
+			want: "events(env=prod,service=tempo)",
+		},
+		{
+			name: "normalises empty parameter list",
+			in:   "events()",
+			want: "events",
+		},
+		{
+			name: "trims outer whitespace",
+			in:   "  events(env=prod)  ",
+			want: "events(env=prod)",
+		},
+		{
+			name: "already canonical is a no-op",
+			in:   "events(env=prod,service=tempo)",
+			want: "events(env=prod,service=tempo)",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := tables.Canonicalize(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("propagates Parse errors", func(t *testing.T) {
+		t.Parallel()
+		_, err := tables.Canonicalize("(a=1)")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, tables.ErrSyntax)
+	})
+}
+
+func TestWrapInBackticks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "no backticks", in: "events(env=prod)", want: "`events(env=prod)`"},
+		{name: "empty input", in: "", want: "``"},
+		{name: "single inner backtick", in: "a`b", want: "`a``b`"},
+		{name: "multiple inner backticks", in: "`a`b`", want: "```a``b```"},
+		{name: "trailing backtick", in: "a`", want: "`a```"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, tables.WrapInBackticks(tc.in))
+		})
+	}
+}
+
+func TestUnwrapFromBackticks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("round-trips arbitrary content via WrapInBackticks", func(t *testing.T) {
+		t.Parallel()
+		cases := []string{
+			"",
+			"events(env=prod)",
+			"a`b",
+			"`leading",
+			"trailing`",
+			"```all backticks```",
+			"events(name=Promo \\(2024\\),tag=foo`bar)",
+		}
+		for _, in := range cases {
+			wrapped := tables.WrapInBackticks(in)
+			got, err := tables.UnwrapFromBackticks(wrapped)
+			require.NoError(t, err, "unwrap of %q (wrapped from %q)", wrapped, in)
+			assert.Equal(t, in, got, "round-trip via wrapped form %q", wrapped)
+		}
+	})
+
+	t.Run("rejects malformed wrapping", func(t *testing.T) {
+		t.Parallel()
+		bad := []string{
+			"",                  // missing both delimiters
+			"`",                 // single backtick
+			"events(env=prod)",  // no delimiters
+			"`events(env=prod)", // missing trailing
+			"events(env=prod)`", // missing leading
+			"`a`b`",             // unescaped inner backtick
+		}
+		for _, in := range bad {
+			_, err := tables.UnwrapFromBackticks(in)
+			require.Error(t, err, "expected error for %q", in)
+			assert.ErrorIs(t, err, tables.ErrSyntax, "input: %q", in)
+		}
+	})
+}
