@@ -26,9 +26,19 @@ func TestParse(t *testing.T) {
 			want: tables.TableRef{Table: "events"},
 		},
 		{
-			name: "empty parameter list",
+			name: "empty parameter list normalises to nil",
 			in:   "events()",
-			want: tables.TableRef{Table: "events", TableParams: map[string]string{}},
+			want: tables.TableRef{Table: "events"},
+		},
+		{
+			name: "outer whitespace is trimmed",
+			in:   "  events(env=prod)  ",
+			want: tables.TableRef{Table: "events", TableParams: map[string]string{"env": "prod"}},
+		},
+		{
+			name: "outer whitespace includes newlines and tabs",
+			in:   "\t\nevents\n",
+			want: tables.TableRef{Table: "events"},
 		},
 		{
 			name: "single parameter",
@@ -117,6 +127,7 @@ func TestParseErrors(t *testing.T) {
 		wantErr error
 	}{
 		{name: "empty input", in: "", wantErr: tables.ErrSyntax},
+		{name: "all whitespace input", in: "   \t\n  ", wantErr: tables.ErrSyntax},
 		{name: "empty table with params", in: "(a=1)", wantErr: tables.ErrSyntax},
 		{name: "empty table with empty params", in: "()", wantErr: tables.ErrSyntax},
 		{name: "unterminated parameter list", in: "events(a=1", wantErr: tables.ErrSyntax},
@@ -310,29 +321,38 @@ func TestRoundTripFixedCases(t *testing.T) {
 		}
 		require.NoError(t, err, "case %d: %#v -> %q", i, ref, out)
 		assert.Equal(t, ref.Table, got.Table, "case %d", i)
-		// Allow nil vs empty-map equivalence.
+		// Empty TableParams (nil or empty map) round-trips to nil because the
+		// encoder omits the parameter list when there are no parameters and
+		// the parser normalises an absent or empty parameter list to nil.
 		if len(ref.TableParams) == 0 {
-			assert.Empty(t, got.TableParams, "case %d", i)
+			assert.Nil(t, got.TableParams, "case %d", i)
 			continue
 		}
 		assert.Equal(t, ref.TableParams, got.TableParams, "case %d", i)
 	}
 }
 
-func TestValidate(t *testing.T) {
-	t.Parallel()
-
-	schema := &schemads.Schema{
+func validateSchema() *schemads.Schema {
+	return &schemads.Schema{
 		Tables: []schemads.Table{
 			{
 				Name: "events",
 				TableParameters: []schemads.TableParameter{
 					{Name: "service", Root: true, Required: true},
 					{Name: "env", Root: true},
+					// instance is optional but depends on env, exercising
+					// the dependency check on optional non-root params.
+					{Name: "instance", DependsOn: []string{"env"}},
 				},
 			},
 		},
 	}
+}
+
+func TestValidate(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
 
 	tests := []struct {
 		name    string
@@ -348,6 +368,12 @@ func TestValidate(t *testing.T) {
 			ref:  tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo", "env": "prod"}},
 		},
 		{
+			name: "valid with full dependency chain",
+			ref: tables.TableRef{Table: "events", TableParams: map[string]string{
+				"service": "tempo", "env": "prod", "instance": "i1",
+			}},
+		},
+		{
 			name:    "unknown table",
 			ref:     tables.TableRef{Table: "missing", TableParams: map[string]string{"service": "tempo"}},
 			wantErr: tables.ErrUnknownTable,
@@ -361,6 +387,13 @@ func TestValidate(t *testing.T) {
 			name:    "unknown parameter",
 			ref:     tables.TableRef{Table: "events", TableParams: map[string]string{"service": "tempo", "bogus": "x"}},
 			wantErr: tables.ErrUnknownParameter,
+		},
+		{
+			name: "missing dependency",
+			ref: tables.TableRef{Table: "events", TableParams: map[string]string{
+				"service": "tempo", "instance": "i1", // instance requires env
+			}},
+			wantErr: tables.ErrMissingDependency,
 		},
 	}
 
@@ -378,8 +411,178 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidateAggregatesErrors(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
+
+	// A reference that violates three rules simultaneously:
+	//   - missing required "service"
+	//   - "instance" present but its dependency "env" missing
+	//   - "bogus" is not a declared parameter
+	ref := tables.TableRef{
+		Table: "events",
+		TableParams: map[string]string{
+			"instance": "i1",
+			"bogus":    "x",
+		},
+	}
+
+	err := tables.Validate(ref, schema)
+	require.Error(t, err)
+
+	// Every component sentinel must be matchable on the joined error.
+	assert.ErrorIs(t, err, tables.ErrUnknownParameter)
+	assert.ErrorIs(t, err, tables.ErrMissingRequired)
+	assert.ErrorIs(t, err, tables.ErrMissingDependency)
+
+	// errors.Join exposes its components via Unwrap() []error. Verify the
+	// expected ordering: unknown params first (sorted by key), then
+	// missing-required (in declaration order), then missing-dependency
+	// (sorted by key). With the inputs above we expect 3 components.
+	joined, ok := err.(interface{ Unwrap() []error })
+	require.True(t, ok, "expected errors.Join error, got %T", err)
+	parts := joined.Unwrap()
+	require.Len(t, parts, 3)
+	assert.ErrorIs(t, parts[0], tables.ErrUnknownParameter)
+	assert.Contains(t, parts[0].Error(), `"bogus"`)
+	assert.ErrorIs(t, parts[1], tables.ErrMissingRequired)
+	assert.Contains(t, parts[1].Error(), `"service"`)
+	assert.ErrorIs(t, parts[2], tables.ErrMissingDependency)
+	assert.Contains(t, parts[2].Error(), `"instance"`)
+	assert.Contains(t, parts[2].Error(), `"env"`)
+}
+
+func TestValidateUnknownTableShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	schema := validateSchema()
+
+	// Unknown table is fatal; we should NOT see any other component errors
+	// joined alongside it. Confirms the documented short-circuit behaviour.
+	ref := tables.TableRef{
+		Table: "nope",
+		TableParams: map[string]string{
+			"bogus": "x", // would also be an unknown-parameter error if checked
+		},
+	}
+	err := tables.Validate(ref, schema)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, tables.ErrUnknownTable)
+	_, joined := err.(interface{ Unwrap() []error })
+	assert.False(t, joined, "unknown-table error should not be a joined error: %v", err)
+}
+
 func TestValidateNilSchema(t *testing.T) {
 	t.Parallel()
 	err := tables.Validate(tables.TableRef{Table: "x"}, nil)
 	require.Error(t, err)
+}
+
+func TestCanonicalize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "strips inner whitespace and sorts keys",
+			in:   "events( service = tempo , env = prod )",
+			want: "events(env=prod,service=tempo)",
+		},
+		{
+			name: "normalises empty parameter list",
+			in:   "events()",
+			want: "events",
+		},
+		{
+			name: "trims outer whitespace",
+			in:   "  events(env=prod)  ",
+			want: "events(env=prod)",
+		},
+		{
+			name: "already canonical is a no-op",
+			in:   "events(env=prod,service=tempo)",
+			want: "events(env=prod,service=tempo)",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := tables.Canonicalize(tc.in)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("propagates Parse errors", func(t *testing.T) {
+		t.Parallel()
+		_, err := tables.Canonicalize("(a=1)")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, tables.ErrSyntax)
+	})
+}
+
+func TestWrapInBackticks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "no backticks", in: "events(env=prod)", want: "`events(env=prod)`"},
+		{name: "empty input", in: "", want: "``"},
+		{name: "single inner backtick", in: "a`b", want: "`a``b`"},
+		{name: "multiple inner backticks", in: "`a`b`", want: "```a``b```"},
+		{name: "trailing backtick", in: "a`", want: "`a```"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, tables.WrapInBackticks(tc.in))
+		})
+	}
+}
+
+func TestUnwrapFromBackticks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("round-trips arbitrary content via WrapInBackticks", func(t *testing.T) {
+		t.Parallel()
+		cases := []string{
+			"",
+			"events(env=prod)",
+			"a`b",
+			"`leading",
+			"trailing`",
+			"```all backticks```",
+			"events(name=Promo \\(2024\\),tag=foo`bar)",
+		}
+		for _, in := range cases {
+			wrapped := tables.WrapInBackticks(in)
+			got, err := tables.UnwrapFromBackticks(wrapped)
+			require.NoError(t, err, "unwrap of %q (wrapped from %q)", wrapped, in)
+			assert.Equal(t, in, got, "round-trip via wrapped form %q", wrapped)
+		}
+	})
+
+	t.Run("rejects malformed wrapping", func(t *testing.T) {
+		t.Parallel()
+		bad := []string{
+			"",                  // missing both delimiters
+			"`",                 // single backtick
+			"events(env=prod)",  // no delimiters
+			"`events(env=prod)", // missing trailing
+			"events(env=prod)`", // missing leading
+			"`a`b`",             // unescaped inner backtick
+		}
+		for _, in := range bad {
+			_, err := tables.UnwrapFromBackticks(in)
+			require.Error(t, err, "expected error for %q", in)
+			assert.ErrorIs(t, err, tables.ErrSyntax, "input: %q", in)
+		}
+	})
 }

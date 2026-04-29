@@ -17,7 +17,12 @@ import (
 // The encoded form does not include any outer delimiters. If the surrounding
 // system wraps references in delimiters (for example, backticks in a query
 // language), callers are responsible for adding them on the way out and
-// stripping them on the way in before calling [Parse].
+// stripping them on the way in before calling [Parse]. See
+// [WrapInBackticks] and [UnwrapFromBackticks] for the standard recipe.
+//
+// TableRef is not safe for concurrent mutation: callers must finish
+// populating Table and TableParams before sharing a value across
+// goroutines. Concurrent reads of an immutable TableRef are safe.
 type TableRef struct {
 	Table       string
 	TableParams map[string]string
@@ -26,11 +31,12 @@ type TableRef struct {
 // Errors returned by [Parse] and [Validate]. Use [errors.Is] to
 // match.
 var (
-	ErrSyntax           = errors.New("tables: syntax error")
-	ErrUnknownTable     = errors.New("tables: unknown table")
-	ErrUnknownParameter = errors.New("tables: unknown parameter")
-	ErrMissingRequired  = errors.New("tables: missing required parameter")
-	ErrDuplicateKey     = errors.New("tables: duplicate parameter key")
+	ErrSyntax            = errors.New("tables: syntax error")
+	ErrUnknownTable      = errors.New("tables: unknown table")
+	ErrUnknownParameter  = errors.New("tables: unknown parameter")
+	ErrMissingRequired   = errors.New("tables: missing required parameter")
+	ErrMissingDependency = errors.New("tables: missing parameter dependency")
+	ErrDuplicateKey      = errors.New("tables: duplicate parameter key")
 )
 
 // String returns the canonical encoded form of the reference. References with
@@ -71,15 +77,19 @@ func (r TableRef) String() string {
 // Parse decodes the canonical string form of a table reference. The input
 // must NOT include any surrounding delimiters such as backticks; callers
 // embedding the reference in a wider grammar are responsible for stripping
-// those before calling Parse. See the package documentation for the full
+// those before calling Parse. Outer whitespace (any Unicode whitespace) is
+// trimmed before parsing. See the package documentation for the full
 // grammar.
 //
-// The table name must be non-empty. Semantic checks such as table existence
-// are deferred to [Validate].
+// The table name must be non-empty after trimming. An empty parameter list
+// (for example "events()") is normalised to no parameters, so the returned
+// [TableRef.TableParams] is nil — identical to a reference with no parameter
+// list at all.
 //
 // Parse performs only syntactic validation: it does not check whether the
 // table or its parameters exist in any schema. Use [Validate] for that.
 func Parse(s string) (TableRef, error) {
+	s = strings.TrimSpace(s)
 	p := parser{src: s}
 
 	table, err := p.readChars(true)
@@ -101,7 +111,6 @@ func Parse(s string) (TableRef, error) {
 	p.advance()
 	p.skipWS()
 
-	ref.TableParams = make(map[string]string)
 	if p.peek() == ')' {
 		p.advance()
 		if p.pos != len(p.src) {
@@ -130,6 +139,9 @@ func Parse(s string) (TableRef, error) {
 		}
 		value = strings.TrimRight(value, " \t")
 
+		if ref.TableParams == nil {
+			ref.TableParams = make(map[string]string)
+		}
 		if _, dup := ref.TableParams[key]; dup {
 			return TableRef{}, fmt.Errorf("tables: %w: %q", ErrDuplicateKey, key)
 		}
@@ -157,12 +169,18 @@ func Parse(s string) (TableRef, error) {
 //
 //   - the table must exist in the schema;
 //   - every key in [TableRef.TableParams] must be a declared parameter on that table;
-//   - every required parameter declared on the table must be present.
+//   - every required parameter declared on the table must be present;
+//   - for every present parameter, every entry in its
+//     [schemads.TableParameter.DependsOn] list must also be present.
+//
+// Validate aggregates issues: if multiple checks fail, the returned error
+// joins them via [errors.Join] so callers can see every problem in one
+// pass. Each component is matchable with [errors.Is]. The unknown-table
+// check is fatal and short-circuits the rest of the checks.
 //
 // Validate does not check that values are members of
-// [schemads.Schema.TableParameterValues] or that the dependency chain
-// between non-root parameters is satisfied; callers should perform those
-// checks themselves if needed.
+// [schemads.Schema.TableParameterValues]; callers that need value-set
+// enforcement should perform that check themselves.
 func Validate(ref TableRef, schema *schemads.Schema) error {
 	if schema == nil {
 		return errors.New("tables: schema is nil")
@@ -182,20 +200,106 @@ func Validate(ref TableRef, schema *schemads.Schema) error {
 	for _, p := range table.TableParameters {
 		declared[p.Name] = p
 	}
+
+	// Iterate the present keys in sorted order so error ordering is
+	// deterministic across runs and platforms.
+	presentKeys := make([]string, 0, len(ref.TableParams))
 	for k := range ref.TableParams {
+		presentKeys = append(presentKeys, k)
+	}
+	sort.Strings(presentKeys)
+
+	var errs []error
+	for _, k := range presentKeys {
 		if _, ok := declared[k]; !ok {
-			return fmt.Errorf("tables: %w: %q on table %q", ErrUnknownParameter, k, ref.Table)
+			errs = append(errs, fmt.Errorf("tables: %w: %q on table %q", ErrUnknownParameter, k, ref.Table))
 		}
 	}
 	for _, p := range table.TableParameters {
-		if !p.Required {
-			continue
-		}
-		if _, ok := ref.TableParams[p.Name]; !ok {
-			return fmt.Errorf("tables: %w: %q on table %q", ErrMissingRequired, p.Name, ref.Table)
+		if p.Required {
+			if _, ok := ref.TableParams[p.Name]; !ok {
+				errs = append(errs, fmt.Errorf("tables: %w: %q on table %q", ErrMissingRequired, p.Name, ref.Table))
+			}
 		}
 	}
-	return nil
+	for _, k := range presentKeys {
+		decl, ok := declared[k]
+		if !ok {
+			continue // already reported as unknown
+		}
+		for _, dep := range decl.DependsOn {
+			if _, present := ref.TableParams[dep]; !present {
+				errs = append(errs, fmt.Errorf("tables: %w: %q requires %q on table %q",
+					ErrMissingDependency, k, dep, ref.Table))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Canonicalize parses s and re-encodes it via [TableRef.String], returning
+// the canonical form. It is shorthand for `Parse(s).String()` and is the
+// recommended way to normalise a reference before using it as a map key,
+// cache key, or identity comparison value: the parser is intentionally
+// lenient (whitespace around separators, empty parameter lists, etc.)
+// while the encoder is strict, so two semantically-equal raw inputs may
+// not be byte-equal until canonicalised.
+//
+// Canonicalize returns the same errors as [Parse].
+func Canonicalize(s string) (string, error) {
+	ref, err := Parse(s)
+	if err != nil {
+		return "", err
+	}
+	return ref.String(), nil
+}
+
+// WrapInBackticks returns s wrapped in a pair of backtick delimiters,
+// with any backticks in s doubled (`` `` ``) so that the result can be
+// unambiguously [UnwrapFromBackticks]'d back into the original string.
+//
+// Use this when embedding a [TableRef.String] output (or any other
+// payload) inside a wider grammar that uses backticks as identifier
+// delimiters. The doubling rule is the same one used by SQL identifier
+// quoting (e.g. ANSI double quotes, MySQL backticks).
+func WrapInBackticks(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s) + 2)
+	sb.WriteByte('`')
+	for i := 0; i < len(s); i++ {
+		if s[i] == '`' {
+			sb.WriteByte('`')
+		}
+		sb.WriteByte(s[i])
+	}
+	sb.WriteByte('`')
+	return sb.String()
+}
+
+// UnwrapFromBackticks reverses [WrapInBackticks]: it strips the outer
+// backtick delimiters and un-doubles any escaped backticks inside.
+//
+// It returns [ErrSyntax] if s is not wrapped in backticks or contains an
+// unescaped backtick inside the wrapped content.
+func UnwrapFromBackticks(s string) (string, error) {
+	if len(s) < 2 || s[0] != '`' || s[len(s)-1] != '`' {
+		return "", fmt.Errorf("tables: %w: input is not wrapped in backticks", ErrSyntax)
+	}
+	inner := s[1 : len(s)-1]
+	var sb strings.Builder
+	sb.Grow(len(inner))
+	for i := 0; i < len(inner); i++ {
+		if inner[i] != '`' {
+			sb.WriteByte(inner[i])
+			continue
+		}
+		if i+1 >= len(inner) || inner[i+1] != '`' {
+			return "", fmt.Errorf("tables: %w: unescaped backtick at byte %d in wrapped content", ErrSyntax, i+1)
+		}
+		sb.WriteByte('`')
+		i++ // consume the doubled backtick
+	}
+	return sb.String(), nil
 }
 
 func isReserved(b byte) bool {
