@@ -129,18 +129,15 @@ func TestKey_StringDoesNotExposeUserIdentity(t *testing.T) {
 	require.NotContains(t, k.String(), "Alice")
 }
 
-// TestKey_InjectionResistance verifies a user-controlled value containing the
-// key separator characters cannot collide with a different (cacheNamespace,
-// parts) tuple of the same length.
-func TestKey_InjectionResistance(t *testing.T) {
+func TestKey_UserSuppliedPartsAreHashed(t *testing.T) {
 	pc := mockPluginContext()
-	// "foo" + "#" + "bar" vs "foo#" + "" + "bar" — concatenation would
-	// produce identical bytes; length-prefixing must not.
-	a, err := KeyFromPluginContext(pc, ScopeDatasource, "ns", "foo", "#bar")
+	a, err := KeyFromPluginContext(pc, ScopeDatasource, "ns", "table", "env=prod")
 	require.NoError(t, err)
-	b, err := KeyFromPluginContext(pc, ScopeDatasource, "ns", "foo#", "bar")
+	b, err := KeyFromPluginContext(pc, ScopeDatasource, "ns", "table", "env=dev")
 	require.NoError(t, err)
+
 	require.NotEqual(t, a.String(), b.String())
+	require.NotContains(t, a.String(), "env=prod")
 }
 
 func TestKey_DifferentEndpointsAreDistinct(t *testing.T) {

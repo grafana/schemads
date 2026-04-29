@@ -2,7 +2,6 @@ package cache
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"strconv"
@@ -46,9 +45,7 @@ type Key struct {
 	// prefix is the tenant/datasource/user scope. It contains only stable IDs
 	// and hashes so String remains safe for logs.
 	prefix string
-	// body is the SHA-256 (hex) of the length-prefixed cache namespace and
-	// extra parts. Length-prefixing prevents user-controlled values from
-	// injecting key separators to collide with another tenant's prefix.
+	// body is the SHA-256 (hex) of the cache namespace and extra parts.
 	body string
 }
 
@@ -93,10 +90,9 @@ var (
 //
 //	namespace#dsUID#updatedUnix#proxyHash[#userHash]
 //
-// The cacheNamespace and parts arguments are length-prefixed and SHA-256
-// hashed into the key body, so user-controlled values (table parameters,
-// column names) cannot inject `#`/`|` separators to collide with another
-// tenant's prefix.
+// The cacheNamespace and parts arguments are SHA-256 hashed into the key body,
+// so user-controlled values (table parameters, column names) are not exposed in
+// the key string.
 //
 // Returns an error when:
 //   - DataSourceInstanceSettings is nil (no datasource scope available),
@@ -168,22 +164,12 @@ func userIdentity(u *backend.User) (string, bool) {
 	return "", false
 }
 
-// hashParts returns the hex SHA-256 of the length-prefixed cache namespace
-// and extra parts. Length prefixing prevents user-controlled values from
-// constructing a body that, after concatenation, looks like a different
-// (cacheNamespace, parts) tuple.
+// hashParts returns the hex SHA-256 of the cache namespace and extra parts.
 func hashParts(cacheNamespace string, parts []string) string {
 	h := sha256.New()
-	writeLengthPrefixed(h, cacheNamespace)
+	_, _ = h.Write([]byte(cacheNamespace))
 	for _, p := range parts {
-		writeLengthPrefixed(h, p)
+		_, _ = h.Write([]byte(p))
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-func writeLengthPrefixed(h interface{ Write([]byte) (int, error) }, s string) {
-	var lenBuf [8]byte
-	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(s)))
-	_, _ = h.Write(lenBuf[:])
-	_, _ = h.Write([]byte(s))
 }

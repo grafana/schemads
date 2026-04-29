@@ -45,6 +45,19 @@ func (h *stubTablesHandler) Tables(ctx context.Context, req *TablesRequest) (*Ta
 	return &TablesResponse{Tables: []string{"t1", "t2"}}, nil
 }
 
+type stubColumnsHandler struct {
+	calls int32
+	fn    func(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error)
+}
+
+func (h *stubColumnsHandler) Columns(ctx context.Context, req *ColumnsRequest) (*ColumnsResponse, error) {
+	atomic.AddInt32(&h.calls, 1)
+	if h.fn != nil {
+		return h.fn(ctx, req)
+	}
+	return &ColumnsResponse{Columns: map[string][]Column{"t1": {{Name: "c1", Type: ColumnTypeString}}}}, nil
+}
+
 type stubColumnValuesHandler struct {
 	calls int32
 }
@@ -115,6 +128,32 @@ func TestDefaultOn_TablesCachesResponse(t *testing.T) {
 	require.Equal(t, 200, r2.Status)
 	require.Equal(t, r1.Body, r2.Body)
 	require.Equal(t, int32(1), atomic.LoadInt32(&tables.calls), "second identical request must hit cache")
+}
+
+func TestColumnsCacheKeySupportsTableSlicesAndParams(t *testing.T) {
+	columns := &stubColumnsHandler{}
+	ds := NewSchemaDatasource(nil, nil, columns, nil, nil, nil)
+	pc := basePluginContext()
+
+	bodyA, _ := json.Marshal(ColumnsRequest{
+		Tables:          []string{"t2", "t1"},
+		TableParameters: map[string]string{"env": "prod"},
+	})
+	bodyB, _ := json.Marshal(ColumnsRequest{
+		Tables:          []string{"t1", "t2"},
+		TableParameters: map[string]string{"env": "prod"},
+	})
+	bodyC, _ := json.Marshal(ColumnsRequest{
+		Tables:          []string{"t1", "t2"},
+		TableParameters: map[string]string{"env": "dev"},
+	})
+
+	callResource(t, ds, pc, RequestTypeColumns, bodyA, nil)
+	callResource(t, ds, pc, RequestTypeColumns, bodyB, nil)
+	require.Equal(t, int32(1), atomic.LoadInt32(&columns.calls), "same table slice and params must hit cache")
+
+	callResource(t, ds, pc, RequestTypeColumns, bodyC, nil)
+	require.Equal(t, int32(2), atomic.LoadInt32(&columns.calls), "different user-supplied params must miss cache")
 }
 
 func TestResponseCache_EmitsEndpointMetrics(t *testing.T) {
