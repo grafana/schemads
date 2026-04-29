@@ -24,7 +24,7 @@ var (
 
 	evictions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "schemads_cache_evictions_total",
-		Help: "Total number of schemads cache entries evicted (TTL or capacity).",
+		Help: "Total number of schemads cache entries evicted after TTL expiry.",
 	}, []string{"endpoint"})
 )
 

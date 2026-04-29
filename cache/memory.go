@@ -21,22 +21,18 @@ type MemoryOptions struct {
 	// Zero means "use the package default" (5 minutes). Negative disables the
 	// cleanup goroutine; entries still expire on access.
 	CleanupInterval time.Duration
-	// MaxEntries bounds the total number of response and typed entries. When
-	// exceeded, the oldest entries are evicted. Zero uses the package default.
-	MaxEntries int
 	// MaxValueBytes bounds byte-oriented response entries. Values larger than
 	// this are not cached. Zero uses the package default.
 	MaxValueBytes int
 }
 
 // DefaultMemoryOptions returns sensible defaults for the SchemaDatasource
-// response cache: 5-minute default TTL, 5-minute cleanup interval, 4096 total
-// entries, and a 5 MiB maximum response value.
+// response cache: 5-minute default TTL, 5-minute cleanup interval, and a 5 MiB
+// maximum response value.
 func DefaultMemoryOptions() MemoryOptions {
 	return MemoryOptions{
 		DefaultTTL:      5 * time.Minute,
 		CleanupInterval: 5 * time.Minute,
-		MaxEntries:      4096,
 		MaxValueBytes:   5 << 20,
 	}
 }
@@ -49,7 +45,6 @@ func DefaultMemoryOptions() MemoryOptions {
 type MemoryCache struct {
 	store         *gocache.Cache
 	sf            singleflight.Group
-	maxEntries    int
 	maxValueBytes int
 }
 
@@ -65,7 +60,6 @@ type memoryEntry struct {
 	endpoint  string
 	value     any
 	valueType reflect.Type
-	createdAt time.Time
 }
 
 // NewMemory returns a MemoryCache with the given options. Pass a zero-value
@@ -81,14 +75,11 @@ func NewMemory(opts MemoryOptions) *MemoryCache {
 	if opts.CleanupInterval < 0 {
 		opts.CleanupInterval = 0
 	}
-	if opts.MaxEntries <= 0 {
-		opts.MaxEntries = defaults.MaxEntries
-	}
 	if opts.MaxValueBytes <= 0 {
 		opts.MaxValueBytes = defaults.MaxValueBytes
 	}
 	c := gocache.New(opts.DefaultTTL, opts.CleanupInterval)
-	mc := &MemoryCache{store: c, maxEntries: opts.MaxEntries, maxValueBytes: opts.MaxValueBytes}
+	mc := &MemoryCache{store: c, maxValueBytes: opts.MaxValueBytes}
 	c.OnEvicted(func(_ string, v any) {
 		if e, ok := v.(memoryEntry); ok {
 			recordEviction(e.endpoint)
@@ -147,12 +138,10 @@ func (m *MemoryCache) Set(_ context.Context, key Key, endpoint string, value []b
 		return
 	}
 	m.store.Set(bytesStorageKey(key), memoryEntry{
-		kind:      entryKindBytes,
-		endpoint:  endpoint,
-		value:     cloneBytes(value),
-		createdAt: time.Now(),
+		kind:     entryKindBytes,
+		endpoint: endpoint,
+		value:    cloneBytes(value),
 	}, ttl)
-	m.enforceMaxEntries()
 }
 
 // Delete removes the entry for key (best-effort).
@@ -324,9 +313,53 @@ func (m *MemoryCache) setTyped(key Key, endpoint string, value any, typ reflect.
 		endpoint:  endpoint,
 		value:     value,
 		valueType: typ,
-		createdAt: time.Now(),
 	}, ttl)
-	m.enforceMaxEntries()
+}
+
+func getOrFetchTyped[T any](
+	ctx context.Context,
+	m *MemoryCache,
+	key Key,
+	endpoint string,
+	typ reflect.Type,
+	ttl time.Duration,
+	fn func(context.Context) (T, error),
+) (T, error) {
+	if m == nil || ttl <= 0 {
+		return fn(ctx)
+	}
+	if v, ok := m.getTyped(key, endpoint, typ, true); ok {
+		out, ok := v.(T)
+		if ok {
+			return out, nil
+		}
+		m.deleteTyped(key, endpoint)
+		recordMiss(endpoint)
+	}
+
+	v, err := m.singleflightDo(typedStorageKey(key, endpoint), func() (any, error) {
+		// Double-check after acquiring the singleflight slot.
+		if v, ok := m.getTyped(key, endpoint, typ, false); ok {
+			out, ok := v.(T)
+			if ok {
+				return out, nil
+			}
+			m.deleteTyped(key, endpoint)
+		}
+		val, ferr := fn(ctx)
+		if ferr != nil {
+			var zero T
+			return zero, ferr
+		}
+		m.setTyped(key, endpoint, val, typ, ttl)
+		return val, nil
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	out, _ := v.(T)
+	return out, nil
 }
 
 func (m *MemoryCache) deleteTyped(key Key, endpoint string) {
@@ -342,34 +375,6 @@ func (m *MemoryCache) singleflightDo(key string, fn func() (any, error)) (any, e
 	}
 	v, err, _ := m.sf.Do(key, fn)
 	return v, err
-}
-
-func (m *MemoryCache) enforceMaxEntries() {
-	if m == nil || m.maxEntries <= 0 {
-		return
-	}
-	for m.store.ItemCount() > m.maxEntries {
-		items := m.store.Items()
-		var (
-			oldestKey string
-			oldest    time.Time
-		)
-		for k, item := range items {
-			e, ok := item.Object.(memoryEntry)
-			if !ok {
-				oldestKey = k
-				break
-			}
-			if oldestKey == "" || e.createdAt.Before(oldest) {
-				oldestKey = k
-				oldest = e.createdAt
-			}
-		}
-		if oldestKey == "" {
-			return
-		}
-		m.store.Delete(oldestKey)
-	}
 }
 
 func bytesStorageKey(key Key) string {

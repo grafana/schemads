@@ -78,22 +78,6 @@ func TestMemoryCache_GetSetCopiesBytes(t *testing.T) {
 	require.Equal(t, []byte("hello"), gotAgain)
 }
 
-func TestMemoryCache_MaxEntriesEvictsOldest(t *testing.T) {
-	c := NewMemory(MemoryOptions{DefaultTTL: time.Minute, MaxEntries: 1})
-	first := newKeyFor(t, "first")
-	second := newKeyFor(t, "second")
-
-	c.Set(context.Background(), first, "test", []byte("first"), time.Minute)
-	time.Sleep(time.Millisecond)
-	c.Set(context.Background(), second, "test", []byte("second"), time.Minute)
-
-	_, ok := c.Get(context.Background(), first, "test")
-	require.False(t, ok)
-	v, ok := c.Get(context.Background(), second, "test")
-	require.True(t, ok)
-	require.Equal(t, []byte("second"), v)
-}
-
 func TestMemoryCache_MaxValueBytesSkipsLargeResponses(t *testing.T) {
 	c := NewMemory(MemoryOptions{DefaultTTL: time.Minute, MaxValueBytes: 3})
 	k := newKeyFor(t, "large")

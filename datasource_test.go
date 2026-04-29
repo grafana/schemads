@@ -247,7 +247,7 @@ func TestPartialOptionsDefaultToUserScope(t *testing.T) {
 		},
 	}
 	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, Options{
-		Cache: cache.MemoryOptions{MaxEntries: 100},
+		Cache: cache.MemoryOptions{MaxValueBytes: 5 << 20},
 	})
 
 	pcA := basePluginContext()

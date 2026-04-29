@@ -82,32 +82,7 @@ func (t *Typed[T]) GetOrFetch(
 	if t == nil || t.cache == nil || ttl <= 0 {
 		return fn(ctx)
 	}
-	if v, ok := t.Get(ctx, key); ok {
-		return v, nil
-	}
-
-	v, err := t.cache.singleflightDo(typedStorageKey(key, t.endpoint), func() (any, error) {
-		// Double-check after acquiring the singleflight slot.
-		if v, ok := t.cache.getTyped(key, t.endpoint, t.valueTyp, false); ok {
-			out, ok := v.(T)
-			if ok {
-				return out, nil
-			}
-			t.cache.deleteTyped(key, t.endpoint)
-		}
-		val, ferr := fn(ctx)
-		if ferr != nil {
-			return *new(T), ferr
-		}
-		t.Set(ctx, key, val, ttl)
-		return val, nil
-	})
-	if err != nil {
-		var zero T
-		return zero, err
-	}
-	out, _ := v.(T)
-	return out, nil
+	return getOrFetchTyped(ctx, t.cache, key, t.endpoint, t.valueTyp, ttl, fn)
 }
 
 // Len returns the number of entries in the underlying memory cache. Intended

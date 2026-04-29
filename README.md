@@ -222,7 +222,7 @@ Table parameter values in `Schema.TableParametereValues` use composite keys of t
 
 ## Caching
 
-`schemads` includes a tenant-safe in-memory response cache that is **on by default** the moment a plugin calls `NewSchemaDatasource`. It is backed by `patrickmn/go-cache` with TTL cleanup and bounded entry/value policies. Plugins can also reuse the same cache instance for in-handler sub-fetches (per-subscription workspaces, per-index field caps, etc.) via `cache.Typed`.
+`schemads` includes a tenant-safe in-memory response cache that is **on by default** the moment a plugin calls `NewSchemaDatasource`. It is backed by `patrickmn/go-cache` with TTL cleanup and a bounded response value size. Plugins can also reuse the same cache instance for in-handler sub-fetches (per-subscription workspaces, per-index field caps, etc.) via `cache.Typed`.
 
 ### Default behaviour
 
@@ -264,7 +264,6 @@ opts := schemas.DefaultOptions
 // Re-enable ColumnValues with a short TTL — autocomplete results need to feel fresh.
 opts.TTL.ColumnValues = 30 * time.Second
 // Tune the shared in-memory cache.
-opts.Cache.MaxEntries = 2048
 opts.Cache.MaxValueBytes = 512 * 1024
 
 ds := schemas.NewSchemaDatasourceWithOptions(
@@ -365,7 +364,7 @@ The cache exports the following Prometheus counters:
 | -------------------------------- | ---------- | -------------------------------------------- |
 | `schemads_cache_hits_total`      | `endpoint` | Cache hits per endpoint (or sub-fetch label) |
 | `schemads_cache_misses_total`    | `endpoint` | Cache misses                                 |
-| `schemads_cache_evictions_total` | `endpoint` | TTL and capacity evictions                   |
+| `schemads_cache_evictions_total` | `endpoint` | TTL evictions                                |
 
 Register them with your Prometheus registry once at startup:
 
@@ -379,8 +378,7 @@ If never registered, metrics still record but are not exposed (matches other SDK
 
 - **TTL.** Entries expire after their per-endpoint TTL. The in-memory cache (`cache.MemoryCache`) is built on `patrickmn/go-cache` and runs a background sweep every `CleanupInterval` (default 5 minutes) so unaccessed entries do not linger.
 - **Manual.** The refresh header (default `X-Schemads-Refresh`) deletes the specific key for the requesting tenant only — never the whole cache.
-- **Capacity.** The default cache keeps at most 4096 entries across response and typed caches. When the limit is exceeded, the oldest entries are evicted.
-- **Response size.** Byte-oriented response entries larger than `MaxValueBytes` (default 5 MiB) are not cached. Typed values are still bounded by TTL and `MaxEntries`.
+- **Response size.** Byte-oriented response entries larger than `MaxValueBytes` (default 5 MiB) are not cached.
 
 ## Column types
 
