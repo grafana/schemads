@@ -91,7 +91,14 @@ type TablesResponse struct {
 
 type ColumnsResponse struct {
 	Columns map[string][]Column `json:"columns"`
-	Errors  map[string]string   `json:"errors,omitempty"`
+	// TableMetadata carries optional table-level descriptive metadata for
+	// the requested tables (e.g. Prometheus HELP/TYPE/UNIT). Populated
+	// lazily here — keyed by table name — so producers that need a
+	// per-table upstream call to assemble metadata don't have to fan
+	// out during fullSchema. Consumers that need metadata for a table
+	// they've already fetched columns for will find it here.
+	TableMetadata map[string]Metadata `json:"tableMetadata,omitempty"`
+	Errors        map[string]string   `json:"errors,omitempty"`
 }
 
 type ColumnValuesResponse struct {
