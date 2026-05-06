@@ -127,6 +127,29 @@ type Table struct {
 	// TableHints lists the per-table execution hints this table supports
 	// via FOR (...) clauses in SQL.
 	TableHints []TableHint `json:"tableHints,omitempty"`
+	// Metadata carries optional descriptive information about the table
+	// (e.g. Prometheus HELP, SQL TABLE COMMENT).
+	Metadata Metadata `json:"metadata,omitzero"`
+}
+
+// Metadata carries optional descriptive information about a [Table] or
+// [Column]. Description and Unit are well-known typed slots; anything
+// datasource-specific belongs in Custom.
+//
+// Convention for Custom keys: lowercase, datasource-namespaced where
+// ambiguous (e.g. "prom.type" rather than "type"). Consumers that don't
+// recognise a key should ignore it.
+type Metadata struct {
+	// Description is free-form human/LLM-readable documentation
+	// (e.g. Prometheus HELP, SQL COMMENT).
+	Description string `json:"description,omitempty"`
+	// Unit is an optional unit of measure for the value
+	// (e.g. "seconds", "bytes"). Free-form; no enforced vocabulary.
+	Unit string `json:"unit,omitempty"`
+	// Custom is an escape hatch for datasource-specific metadata that
+	// doesn't fit a typed slot (e.g. Prometheus metric "type":
+	// counter/gauge/histogram/summary).
+	Custom map[string]any `json:"custom,omitempty"`
 }
 
 // TableParameter describes a hierarchical table parameter within a parent [Table].
@@ -170,6 +193,11 @@ type Column struct {
 	// and avoid pushing filters for this column.
 	Operators []Operator `json:"operators,omitempty"`
 	// Description is optional human/LLM-readable documentation for the column.
+	//
+	// Deprecated: use Metadata.Description. Producers SHOULD populate
+	// Metadata.Description; for one release they MAY also populate this
+	// field for older consumers. Consumers SHOULD prefer Metadata.Description
+	// and fall back to this field only if Metadata.Description is empty.
 	Description string `json:"description,omitempty"`
 	// Precision and Scale apply to ColumnTypeDecimal.
 	Precision *int `json:"precision,omitempty"`
@@ -178,6 +206,9 @@ type Column struct {
 	Size *int `json:"size,omitempty"`
 	// Values lists the allowed members for ColumnTypeEnum and ColumnTypeSet (if available).
 	Values []string `json:"values,omitempty"`
+	// Metadata carries optional descriptive information about the column
+	// (e.g. SQL COLUMN COMMENT, OpenAPI field docs, unit of measure).
+	Metadata Metadata `json:"metadata,omitzero"`
 }
 
 // ColumnType is the scalar type of a column. Values are aligned with
