@@ -213,6 +213,10 @@ type Column struct {
 	Size *int `json:"size,omitempty"`
 	// Values lists the allowed members for ColumnTypeEnum and ColumnTypeSet (if available).
 	Values []string `json:"values,omitempty"`
+	// SupportsValues is true when distinct values for this column can be fetched
+	// via a [ColumnValuesRequest] (columnValues resource). When false or omitted,
+	// consumers should not call columnValues for this column.
+	SupportsValues *bool `json:"supportsValues,omitempty"`
 	// Metadata carries optional descriptive information about the column
 	// (e.g. SQL COLUMN COMMENT, OpenAPI field docs, unit of measure).
 	Metadata Metadata `json:"metadata,omitzero"`
