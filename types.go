@@ -85,6 +85,7 @@ type TablesResponse struct {
 	Tables          []string                    `json:"tables"`
 	TableParameters map[string][]TableParameter `json:"tableParameters,omitempty"`
 	TableHints      map[string][]TableHint      `json:"tableHints,omitempty"`
+	TableMetadata   map[string]Metadata         `json:"tableMetadata,omitempty"`
 	Capabilities    *DatasourceCapabilities     `json:"capabilities,omitempty"`
 	Errors          map[string]string           `json:"errors,omitempty"`
 }
@@ -140,8 +141,8 @@ type Table struct {
 }
 
 // Metadata carries optional descriptive information about a [Table] or
-// [Column]. Description and Unit are well-known typed slots; anything
-// datasource-specific belongs in Custom.
+// [Column]. Description, DisplayName and Unit are well-known typed slots;
+// anything datasource-specific belongs in Custom.
 //
 // Convention for Custom keys: lowercase, datasource-namespaced where
 // ambiguous (e.g. "prom.type" rather than "type"). Consumers that don't
@@ -150,8 +151,14 @@ type Metadata struct {
 	// Description is free-form human/LLM-readable documentation
 	// (e.g. Prometheus HELP, SQL COMMENT).
 	Description string `json:"description,omitempty"`
+	// DisplayName is an optional human-readable display label for a table
+	// or column (e.g. "Pull Requests" for a table named "pull_requests").
+	// Consumers SHOULD prefer DisplayName for UI display and fall back to
+	// the canonical Name when DisplayName is empty.
+	DisplayName string `json:"displayName,omitempty"`
 	// Unit is an optional unit of measure for the value
 	// (e.g. "seconds", "bytes"). Free-form; no enforced vocabulary.
+	// Should not be set for table metadata
 	Unit string `json:"unit,omitempty"`
 	// Custom is an escape hatch for datasource-specific metadata that
 	// doesn't fit a typed slot (e.g. Prometheus metric "type":
