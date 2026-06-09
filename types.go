@@ -86,8 +86,14 @@ type TablesResponse struct {
 	TableParameters map[string][]TableParameter `json:"tableParameters,omitempty"`
 	TableHints      map[string][]TableHint      `json:"tableHints,omitempty"`
 	TableMetadata   map[string]Metadata         `json:"tableMetadata,omitempty"`
-	Capabilities    *DatasourceCapabilities     `json:"capabilities,omitempty"`
-	Errors          map[string]string           `json:"errors,omitempty"`
+	// TableCapabilities carries per-table pushdown capabilities keyed by table
+	// name. When present for a table, consumers SHOULD prefer these over the
+	// datasource-wide Capabilities default.
+	TableCapabilities map[string]*DatasourceCapabilities `json:"tableCapabilities,omitempty"`
+	// Capabilities describes datasource-wide defaults for SQL pushdown. Per-table
+	// overrides live in TableCapabilities.
+	Capabilities *DatasourceCapabilities `json:"capabilities,omitempty"`
+	Errors       map[string]string       `json:"errors,omitempty"`
 }
 
 type ColumnsResponse struct {
@@ -121,9 +127,8 @@ type Schema struct {
 	// depend on ancestor selections and must be fetched incrementally via
 	// a "tableParameterValues" request with [TableParameterValuesRequest.DependencyValues].
 	TableParameterValues map[string]map[string][]string `json:"tableParameterValues,omitempty"`
-	// Capabilities describes what SQL operations the datasource can handle
-	// natively. The SQL engine uses this to decide which operations to push
-	// down to the datasource vs execute locally.
+	// Capabilities describes datasource-wide defaults for SQL pushdown. Per-table
+	// overrides live on [Table.Capabilities].
 	Capabilities *DatasourceCapabilities `json:"capabilities,omitempty"`
 }
 
@@ -135,6 +140,9 @@ type Table struct {
 	// TableHints lists the per-table execution hints this table supports
 	// via FOR (...) clauses in SQL.
 	TableHints []TableHint `json:"tableHints,omitempty"`
+	// Capabilities describes what SQL operations this table supports natively.
+	// When set, consumers SHOULD prefer this over [Schema.Capabilities].
+	Capabilities *DatasourceCapabilities `json:"capabilities,omitempty"`
 	// Metadata carries optional descriptive information about the table
 	// (e.g. Prometheus HELP, SQL TABLE COMMENT).
 	Metadata Metadata `json:"metadata,omitzero"`
@@ -331,10 +339,12 @@ var SupportedAggregateFunctions = []AggregateFunction{
 	AggregateMax,
 }
 
-// DatasourceCapabilities describes what SQL operations a datasource can handle
-// natively. When a capability is declared, the SQL engine may push the operation
-// down to the datasource instead of executing it locally. The datasource is then
-// expected to return results as if the operation was applied.
+// DatasourceCapabilities describes what SQL operations can be handled natively,
+// either at the datasource level ([Schema.Capabilities], [TablesResponse.Capabilities])
+// or per table ([Table.Capabilities], [TablesResponse.TableCapabilities]). When a
+// capability is declared, the SQL engine may push the operation down to the
+// datasource instead of executing it locally. The datasource is then expected to
+// return results as if the operation was applied.
 type DatasourceCapabilities struct {
 	// AggregateFunctions lists aggregate functions the datasource can execute
 	// natively. Values should be drawn from the AggregateFunction constants
