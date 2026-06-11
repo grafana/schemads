@@ -276,6 +276,7 @@ func parseSchemaRequest(endpoint string, body []byte, common *CommonRequest) (*p
 		parsed.keyParts = []string{
 			"tables", canonicalJSON(sortedStrings(request.Tables)),
 			"tableParameters", canonicalJSON(request.TableParameters),
+			"schemaContext", canonicalJSON(request.SchemaContext),
 		}
 	case RequestTypeTableParameterValues:
 		request := &TableParameterValuesRequest{CommonRequest: *common}
@@ -298,6 +299,7 @@ func parseSchemaRequest(endpoint string, body []byte, common *CommonRequest) (*p
 			"table", request.Table,
 			"columns", canonicalJSON(sortedStrings(request.Columns)),
 			"tableParameters", canonicalJSON(request.TableParameters),
+			"schemaContext", canonicalJSON(request.SchemaContext),
 			"timeRange", canonicalJSON(request.TimeRange),
 		}
 	default:
