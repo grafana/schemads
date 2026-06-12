@@ -114,8 +114,8 @@ type TableParametersValuesResponse struct {
 
 // Schema is the complete tabular schema returned by a "fullSchema" request.
 type Schema struct {
-	Tables    []Table  `json:"tables,omitempty"`
-	Functions []string `json:"functions,omitempty"`
+	Tables    []Table    `json:"tables,omitempty"`
+	Functions []Function `json:"functions,omitempty"`
 	// TableParameterValues provides pre-populated values for root table parameters only
 	// (table name -> table parameter name -> values). Non-root table parameter values
 	// depend on ancestor selections and must be fetched incrementally via
@@ -301,6 +301,34 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
+}
+
+// Function describes a SQL function that a datasource exposes. Consumers use
+// function definitions for autocomplete, documentation, and query validation.
+type Function struct {
+	// Name is the function identifier as used in SQL (e.g. "NOW", "UPPER").
+	Name string `json:"name"`
+	// Description is optional human/LLM-readable documentation for the function.
+	Description string `json:"description,omitempty"`
+	// Parameters describes the function's formal parameters in declaration order.
+	// Omit for zero-argument functions (e.g. NOW()).
+	Parameters []FunctionParameter `json:"parameters,omitempty"`
+	// ReturnType is the scalar type of the function's return value. When empty,
+	// consumers should treat the return type as unknown/polymorphic.
+	ReturnType ColumnType `json:"returnType,omitempty"`
+}
+
+// FunctionParameter describes a single formal parameter of a [Function].
+type FunctionParameter struct {
+	// Name is the parameter identifier (e.g. "str", "precision").
+	Name string `json:"name"`
+	// Type is the expected scalar type of the argument.
+	Type ColumnType `json:"type"`
+	// Required is true when the caller must supply this argument. Optional
+	// parameters (Required == false) typically have datasource-defined defaults.
+	Required bool `json:"required"`
+	// Description is optional human/LLM-readable documentation.
+	Description string `json:"description,omitempty"`
 }
 
 // AggregateFunction names an aggregation that a datasource can declare
