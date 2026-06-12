@@ -34,6 +34,10 @@ type ColumnValuesHandler interface {
 	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
+type FunctionsHandler interface {
+	Functions(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error)
+}
+
 type CommonRequest struct {
 	Headers       http.Header           `json:"-"`
 	PluginContext backend.PluginContext `json:"-"`
@@ -74,6 +78,10 @@ type TableParameterValuesRequest struct {
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`
 }
 
+type FunctionsRequest struct {
+	CommonRequest
+}
+
 // SchemaResponse is the JSON body returned by the fullSchema endpoint.
 type SchemaResponse struct {
 	// FullSchema is populated for "fullSchema" requests.
@@ -110,6 +118,11 @@ type ColumnValuesResponse struct {
 type TableParametersValuesResponse struct {
 	TableParameterValues map[string][]string `json:"tableParameterValues"`
 	Errors               map[string]string   `json:"errors,omitempty"`
+}
+
+type FunctionsResponse struct {
+	Functions []Function        `json:"functions"`
+	Errors    map[string]string `json:"errors,omitempty"`
 }
 
 // Schema is the complete tabular schema returned by a "fullSchema" request.

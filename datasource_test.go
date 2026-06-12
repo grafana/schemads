@@ -67,6 +67,27 @@ func (h *stubColumnValuesHandler) ColumnValues(ctx context.Context, req *ColumnV
 	return &ColumnValuesResponse{ColumnValues: map[string][]string{"c1": {"a", "b"}}}, nil
 }
 
+type stubFunctionsHandler struct {
+	calls int32
+	fn    func(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error)
+}
+
+func (h *stubFunctionsHandler) Functions(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error) {
+	atomic.AddInt32(&h.calls, 1)
+	if h.fn != nil {
+		return h.fn(ctx, req)
+	}
+	return &FunctionsResponse{Functions: []Function{
+		{Name: "NOW", Description: "Returns the current date and time", ReturnType: ColumnTypeDatetime},
+		{Name: "UPPER", Description: "Converts a string to upper case", ReturnType: ColumnTypeString, Parameters: []FunctionParameter{
+			{Name: "str", Type: ColumnTypeString, Required: true},
+		}},
+		{Name: "LOWER", Description: "Converts a string to lower case", ReturnType: ColumnTypeString, Parameters: []FunctionParameter{
+			{Name: "str", Type: ColumnTypeString, Required: true},
+		}},
+	}}, nil
+}
+
 // --- response sender --------------------------------------------------------
 
 type captureSender struct {
@@ -118,7 +139,7 @@ func callResource(t *testing.T, ds *SchemaDatasource, pc backend.PluginContext, 
 
 func TestDefaultOn_TablesCachesResponse(t *testing.T) {
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	r1 := callResource(t, ds, pc, RequestTypeTables, nil, nil)
@@ -132,7 +153,7 @@ func TestDefaultOn_TablesCachesResponse(t *testing.T) {
 
 func TestColumnsCacheKeySupportsTableSlicesAndParams(t *testing.T) {
 	columns := &stubColumnsHandler{}
-	ds := NewSchemaDatasource(nil, nil, columns, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, nil, columns, nil, nil, nil, nil)
 	pc := basePluginContext()
 
 	bodyA, _ := json.Marshal(ColumnsRequest{
@@ -161,7 +182,7 @@ func TestResponseCache_EmitsEndpointMetrics(t *testing.T) {
 	cache.MustRegisterMetrics(reg)
 
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 	pc := basePluginContext()
 	beforeFamilies, err := reg.Gather()
 	require.NoError(t, err)
@@ -185,7 +206,7 @@ func TestResponseCache_DedupesConcurrentMisses(t *testing.T) {
 			return &TablesResponse{Tables: []string{"t1"}}, nil
 		},
 	}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 	pc := basePluginContext()
 
 	const N = 32
@@ -218,7 +239,7 @@ func TestResponseCache_DedupesConcurrentMisses(t *testing.T) {
 
 func TestColumnValues_NotCachedByDefault(t *testing.T) {
 	cv := &stubColumnValuesHandler{}
-	ds := NewSchemaDatasource(nil, nil, nil, nil, cv, nil)
+	ds := NewSchemaDatasource(nil, nil, nil, nil, cv, nil, nil)
 
 	pc := basePluginContext()
 	body, _ := json.Marshal(ColumnValuesRequest{Table: "t1", Columns: []string{"c1"}})
@@ -232,7 +253,7 @@ func TestColumnValues_CachedWhenOptedIn(t *testing.T) {
 	cv := &stubColumnValuesHandler{}
 	opts := DefaultOptions
 	opts.TTL.ColumnValues = time.Minute
-	ds := NewSchemaDatasourceWithOptions(nil, nil, nil, nil, cv, nil, opts)
+	ds := NewSchemaDatasourceWithOptions(nil, nil, nil, nil, cv, nil, nil, opts)
 
 	pc := basePluginContext()
 	body, _ := json.Marshal(ColumnValuesRequest{Table: "t1", Columns: []string{"c1"}})
@@ -249,7 +270,7 @@ func TestTenantIsolation(t *testing.T) {
 			return &TablesResponse{Tables: []string{req.PluginContext.Namespace}}, nil
 		},
 	}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pcA := basePluginContext()
 	pcB := basePluginContext()
@@ -267,7 +288,7 @@ func TestUserScopeSeparatesUsers(t *testing.T) {
 			return &TablesResponse{Tables: []string{req.PluginContext.User.Login}}, nil
 		},
 	}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pcA := basePluginContext()
 	pcB := basePluginContext()
@@ -285,7 +306,7 @@ func TestPartialOptionsDefaultToUserScope(t *testing.T) {
 			return &TablesResponse{Tables: []string{req.PluginContext.User.Login}}, nil
 		},
 	}
-	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, Options{
+	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, nil, Options{
 		Cache: cache.MemoryOptions{MaxValueBytes: 5 << 20},
 	})
 
@@ -309,7 +330,7 @@ func TestPerEndpointScope_RelaxesToDatasource(t *testing.T) {
 	opts.PerEndpointScope = map[string]cache.Scope{
 		RequestTypeTables: cache.ScopeDatasource,
 	}
-	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, opts)
+	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, nil, opts)
 
 	pcA := basePluginContext()
 	pcB := basePluginContext()
@@ -322,7 +343,7 @@ func TestPerEndpointScope_RelaxesToDatasource(t *testing.T) {
 
 func TestUpdatedTimestampInvalidates(t *testing.T) {
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	callResource(t, ds, pc, RequestTypeTables, nil, nil)
@@ -338,7 +359,7 @@ func TestUpdatedTimestampInvalidates(t *testing.T) {
 
 func TestScopeUser_NilUserBypassesCache(t *testing.T) {
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	pc.User = nil
@@ -349,7 +370,7 @@ func TestScopeUser_NilUserBypassesCache(t *testing.T) {
 
 func TestScopeUser_EmptyUserIdentityBypassesCache(t *testing.T) {
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	pc.User = &backend.User{}
@@ -360,7 +381,7 @@ func TestScopeUser_EmptyUserIdentityBypassesCache(t *testing.T) {
 
 func TestDisableCacheDisablesCache(t *testing.T) {
 	tables := &stubTablesHandler{}
-	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, Options{DisableCache: true})
+	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, nil, Options{DisableCache: true})
 
 	pc := basePluginContext()
 	callResource(t, ds, pc, RequestTypeTables, nil, nil)
@@ -376,7 +397,7 @@ func TestErrorsAreNotCached(t *testing.T) {
 			return nil, errors.New("boom")
 		},
 	}
-	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, tables, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	sender := &captureSender{}
@@ -394,7 +415,7 @@ func TestSchemaValidationFailureNotCached(t *testing.T) {
 			return &SchemaResponse{FullSchema: bad}, nil
 		},
 	}
-	ds := NewSchemaDatasource(schema, nil, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(schema, nil, nil, nil, nil, nil, nil)
 
 	pc := basePluginContext()
 	r1 := callResource(t, ds, pc, RequestTypeFullSchema, nil, nil)
@@ -408,7 +429,7 @@ func TestRefreshHeaderBypassesAndInvalidates(t *testing.T) {
 	tables := &stubTablesHandler{}
 	opts := DefaultOptions
 	opts.Refresh.MinInterval = 0 // disable rate-limit for this test
-	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, opts)
+	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, nil, opts)
 
 	pc := basePluginContext()
 	callResource(t, ds, pc, RequestTypeTables, nil, nil)
@@ -426,7 +447,7 @@ func TestRefreshHeaderRateLimited(t *testing.T) {
 	tables := &stubTablesHandler{}
 	opts := DefaultOptions
 	opts.Refresh.MinInterval = time.Hour // any refresh after the first is rejected
-	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, opts)
+	ds := NewSchemaDatasourceWithOptions(nil, tables, nil, nil, nil, nil, nil, opts)
 
 	pc := basePluginContext()
 	callResource(t, ds, pc, RequestTypeTables, nil, nil)
@@ -439,11 +460,33 @@ func TestRefreshHeaderRateLimited(t *testing.T) {
 }
 
 func TestCacheAccessor_AlwaysNonNil(t *testing.T) {
-	ds := NewSchemaDatasource(nil, nil, nil, nil, nil, nil)
+	ds := NewSchemaDatasource(nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, ds.Cache())
 
-	dsDisabled := NewSchemaDatasourceWithOptions(nil, nil, nil, nil, nil, nil, Options{DisableCache: true})
+	dsDisabled := NewSchemaDatasourceWithOptions(nil, nil, nil, nil, nil, nil, nil, Options{DisableCache: true})
 	require.Nil(t, dsDisabled.Cache())
+}
+
+func TestFunctions_CachesResponse(t *testing.T) {
+	fns := &stubFunctionsHandler{}
+	ds := NewSchemaDatasource(nil, nil, nil, nil, nil, fns, nil)
+
+	pc := basePluginContext()
+	r1 := callResource(t, ds, pc, RequestTypeFunctions, nil, nil)
+	r2 := callResource(t, ds, pc, RequestTypeFunctions, nil, nil)
+
+	require.Equal(t, 200, r1.Status)
+	require.Equal(t, 200, r2.Status)
+	require.Equal(t, r1.Body, r2.Body)
+	require.Equal(t, int32(1), atomic.LoadInt32(&fns.calls), "second identical request must hit cache")
+}
+
+func TestFunctions_NilHandler_Returns501(t *testing.T) {
+	ds := NewSchemaDatasource(nil, nil, nil, nil, nil, nil, nil)
+
+	pc := basePluginContext()
+	r := callResource(t, ds, pc, RequestTypeFunctions, nil, nil)
+	require.Equal(t, 501, r.Status)
 }
 
 func metricValue(families []*dto.MetricFamily, name, endpoint string) float64 {
