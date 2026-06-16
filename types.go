@@ -51,6 +51,11 @@ type ColumnsRequest struct {
 	CommonRequest
 	Tables          []string          `json:"tables"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
+	// SchemaContext carries concrete values for hints declared with AffectsSchema
+	// on the table (e.g. PARSER=logfmt for Loki parsed line fields). Populated
+	// from FOR (...) clauses at SQL planning time; does not replace execution
+	// hints on Query.TableHintValues.
+	SchemaContext map[string]string `json:"schemaContext,omitempty"`
 }
 
 // ColumnValuesRequest identifies a column whose possible values are being
@@ -60,7 +65,9 @@ type ColumnValuesRequest struct {
 	Table           string            `json:"table"`
 	Columns         []string          `json:"columns,omitempty"`
 	TableParameters map[string]string `json:"tableParameters,omitempty"`
-	TimeRange       apidata.TimeRange `json:"timeRange"`
+	// SchemaContext carries concrete values for hints that affect column discovery.
+	SchemaContext map[string]string `json:"schemaContext,omitempty"`
+	TimeRange     apidata.TimeRange `json:"timeRange"`
 }
 
 // TableParameterValuesRequest identifies a table and
@@ -300,7 +307,9 @@ type ColumnFilter struct {
 // Hints are specified via FOR (...) clauses in SQL and control how the
 // datasource backend executes the query for a specific table — e.g.
 // rate('5m'), step('30s'), instant. Unlike table parameters, hints do not
-// appear as columns and do not affect the table schema.
+// appear as columns. Most hints do not affect the table schema; hints with
+// AffectsSchema set may change discoverable columns when their values are
+// supplied via SchemaContext on columns/columnValues requests.
 type TableHint struct {
 	// Name is the hint identifier used in SQL: FOR (name('value')).
 	Name string `json:"name"`
@@ -309,6 +318,9 @@ type TableHint struct {
 	// HasValue indicates whether the hint takes a string argument.
 	// If false, the hint is a flag: FOR (instant). If true: FOR (rate('5m')).
 	HasValue bool `json:"hasValue,omitempty"`
+	// AffectsSchema indicates the hint can change which columns are returned
+	// by columns/columnValues when its value is supplied in SchemaContext.
+	AffectsSchema bool `json:"affectsSchema,omitempty"`
 }
 
 // AggregateFunction names an aggregation that a datasource can declare
