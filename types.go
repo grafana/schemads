@@ -121,8 +121,8 @@ type TableParametersValuesResponse struct {
 }
 
 type FunctionsResponse struct {
-	Functions []Function        `json:"functions"`
-	Errors    map[string]string `json:"errors,omitempty"`
+	Functions []Function `json:"functions"`
+	Errors    []error    `json:"errors,omitempty"`
 }
 
 // Schema is the complete tabular schema returned by a "fullSchema" request.
