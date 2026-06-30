@@ -70,6 +70,14 @@ func (c *Client) FetchTableParameterValues(ctx context.Context, req *TableParame
 	return &resp, nil
 }
 
+func (c *Client) FetchFunctions(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error) {
+	var resp FunctionsResponse
+	if err := c.do(ctx, RequestTypeFunctions, req.Headers, req, &resp, ErrFunctionsNotImplemented); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) FetchColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error) {
 	var resp ColumnValuesResponse
 	if err := c.do(ctx, RequestTypeColumnValues, req.Headers, req, &resp, ErrColumnValuesNotImplemented); err != nil {

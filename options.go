@@ -63,6 +63,7 @@ type EndpointTTLs struct {
 	// and values are more likely to contain PII. Plugins must opt in
 	// explicitly.
 	ColumnValues time.Duration
+	Functions    time.Duration
 }
 
 // RefreshPolicy controls the manual cache-invalidation header.
@@ -93,6 +94,7 @@ var DefaultOptions = Options{
 		Columns:              2 * time.Minute,
 		TableParameterValues: 1 * time.Minute,
 		ColumnValues:         0, // explicit: never cached by default
+		Functions:            5 * time.Minute,
 	},
 	DefaultScope:     cache.ScopeUser,
 	PerEndpointScope: nil,
@@ -146,6 +148,8 @@ func (o Options) ttlFor(endpoint string) time.Duration {
 		return o.TTL.TableParameterValues
 	case RequestTypeColumnValues:
 		return o.TTL.ColumnValues
+	case RequestTypeFunctions:
+		return o.TTL.Functions
 	default:
 		return 0
 	}

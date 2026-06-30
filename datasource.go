@@ -30,6 +30,7 @@ type SchemaDatasource struct {
 	ColumnsHandler              ColumnsHandler
 	TableParameterValuesHandler TableParameterValuesHandler
 	ColumnValuesHandler         ColumnValuesHandler
+	FunctionsHandler            FunctionsHandler
 
 	// The CallResourceHandler is used to forward requests that are not handled by the schema handlers.
 	CallResourceHandler backend.CallResourceHandler
@@ -49,8 +50,8 @@ type SchemaDatasource struct {
 // to return 404 for non-schema paths.
 //
 // Equivalent to NewSchemaDatasourceWithOptions(..., DefaultOptions).
-func NewSchemaDatasource(schemaHandler SchemaHandler, tablesHandler TablesHandler, columnsHandler ColumnsHandler, tableParameterValuesHandler TableParameterValuesHandler, columnValuesHandler ColumnValuesHandler, next backend.CallResourceHandler) *SchemaDatasource {
-	return NewSchemaDatasourceWithOptions(schemaHandler, tablesHandler, columnsHandler, tableParameterValuesHandler, columnValuesHandler, next, DefaultOptions)
+func NewSchemaDatasource(schemaHandler SchemaHandler, tablesHandler TablesHandler, columnsHandler ColumnsHandler, tableParameterValuesHandler TableParameterValuesHandler, columnValuesHandler ColumnValuesHandler, functionsHandler FunctionsHandler, next backend.CallResourceHandler) *SchemaDatasource {
+	return NewSchemaDatasourceWithOptions(schemaHandler, tablesHandler, columnsHandler, tableParameterValuesHandler, columnValuesHandler, functionsHandler, next, DefaultOptions)
 }
 
 // NewSchemaDatasourceWithOptions is the tuning form of [NewSchemaDatasource].
@@ -68,7 +69,7 @@ func NewSchemaDatasource(schemaHandler SchemaHandler, tablesHandler TablesHandle
 //	    schemas.RequestTypeColumns: cache.ScopeDatasource,
 //	}
 //	NewSchemaDatasourceWithOptions(..., opts)
-func NewSchemaDatasourceWithOptions(schemaHandler SchemaHandler, tablesHandler TablesHandler, columnsHandler ColumnsHandler, tableParameterValuesHandler TableParameterValuesHandler, columnValuesHandler ColumnValuesHandler, next backend.CallResourceHandler, opts Options) *SchemaDatasource {
+func NewSchemaDatasourceWithOptions(schemaHandler SchemaHandler, tablesHandler TablesHandler, columnsHandler ColumnsHandler, tableParameterValuesHandler TableParameterValuesHandler, columnValuesHandler ColumnValuesHandler, functionsHandler FunctionsHandler, next backend.CallResourceHandler, opts Options) *SchemaDatasource {
 	resolved := opts.resolve()
 	var memoryCache *cache.MemoryCache
 	if !resolved.DisableCache {
@@ -80,6 +81,7 @@ func NewSchemaDatasourceWithOptions(schemaHandler SchemaHandler, tablesHandler T
 		ColumnsHandler:              columnsHandler,
 		TableParameterValuesHandler: tableParameterValuesHandler,
 		ColumnValuesHandler:         columnValuesHandler,
+		FunctionsHandler:            functionsHandler,
 		CallResourceHandler:         next,
 		opts:                        resolved,
 		cache:                       memoryCache,
@@ -118,6 +120,7 @@ type parsedSchemaRequest struct {
 	columns              *ColumnsRequest
 	tableParameterValues *TableParameterValuesRequest
 	columnValues         *ColumnValuesRequest
+	functions            *FunctionsRequest
 	keyParts             []string
 }
 
@@ -244,6 +247,16 @@ func (ds *SchemaDatasource) dispatch(ctx context.Context, endpoint string, sende
 		}
 		return json.Marshal(response)
 
+	case RequestTypeFunctions:
+		if ds.FunctionsHandler == nil {
+			return nil, sendSchemaError(sender, http.StatusNotImplemented, ErrFunctionsNotImplemented.Error())
+		}
+		response, err := ds.FunctionsHandler.Functions(ctx, parsed.functions)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(response)
+
 	default:
 		return nil, sender.Send(&backend.CallResourceResponse{
 			Status: 404,
@@ -302,6 +315,9 @@ func parseSchemaRequest(endpoint string, body []byte, common *CommonRequest) (*p
 			"schemaContext", canonicalJSON(request.SchemaContext),
 			"timeRange", canonicalJSON(request.TimeRange),
 		}
+	case RequestTypeFunctions:
+		parsed.functions = &FunctionsRequest{CommonRequest: *common}
+		parsed.keyParts = []string{"request"}
 	default:
 		parsed.keyParts = []string{"unknown"}
 	}

@@ -34,6 +34,10 @@ type ColumnValuesHandler interface {
 	ColumnValues(ctx context.Context, req *ColumnValuesRequest) (*ColumnValuesResponse, error)
 }
 
+type FunctionsHandler interface {
+	Functions(ctx context.Context, req *FunctionsRequest) (*FunctionsResponse, error)
+}
+
 type CommonRequest struct {
 	Headers       http.Header           `json:"-"`
 	PluginContext backend.PluginContext `json:"-"`
@@ -81,6 +85,10 @@ type TableParameterValuesRequest struct {
 	DependencyValues map[string]string `json:"dependencyValues,omitempty"`
 }
 
+type FunctionsRequest struct {
+	CommonRequest
+}
+
 // SchemaResponse is the JSON body returned by the fullSchema endpoint.
 type SchemaResponse struct {
 	// FullSchema is populated for "fullSchema" requests.
@@ -125,10 +133,15 @@ type TableParametersValuesResponse struct {
 	Errors               map[string]string   `json:"errors,omitempty"`
 }
 
+type FunctionsResponse struct {
+	Functions []Function `json:"functions"`
+	Errors    []error    `json:"errors,omitempty"`
+}
+
 // Schema is the complete tabular schema returned by a "fullSchema" request.
 type Schema struct {
-	Tables    []Table  `json:"tables,omitempty"`
-	Functions []string `json:"functions,omitempty"`
+	Tables    []Table    `json:"tables,omitempty"`
+	Functions []Function `json:"functions,omitempty"`
 	// TableParameterValues provides pre-populated values for root table parameters only
 	// (table name -> table parameter name -> values). Non-root table parameter values
 	// depend on ancestor selections and must be fetched incrementally via
@@ -321,6 +334,34 @@ type TableHint struct {
 	// AffectsSchema indicates the hint can change which columns are returned
 	// by columns/columnValues when its value is supplied in SchemaContext.
 	AffectsSchema bool `json:"affectsSchema,omitempty"`
+}
+
+// Function describes a SQL function that a datasource exposes. Consumers use
+// function definitions for autocomplete, documentation, and query validation.
+type Function struct {
+	// Name is the function identifier as used in SQL (e.g. "NOW", "UPPER").
+	Name string `json:"name"`
+	// Description is optional human/LLM-readable documentation for the function.
+	Description string `json:"description,omitempty"`
+	// Parameters describes the function's formal parameters in declaration order.
+	// Omit for zero-argument functions (e.g. NOW()).
+	Parameters []FunctionParameter `json:"parameters,omitempty"`
+	// ReturnType is the scalar type of the function's return value. When empty,
+	// consumers should treat the return type as unknown/polymorphic.
+	ReturnType ColumnType `json:"returnType,omitempty"`
+}
+
+// FunctionParameter describes a single formal parameter of a [Function].
+type FunctionParameter struct {
+	// Name is the parameter identifier (e.g. "str", "precision").
+	Name string `json:"name"`
+	// Type is the expected scalar type of the argument.
+	Type ColumnType `json:"type"`
+	// Required is true when the caller must supply this argument. Optional
+	// parameters (Required == false) typically have datasource-defined defaults.
+	Required bool `json:"required"`
+	// Description is optional human/LLM-readable documentation.
+	Description string `json:"description,omitempty"`
 }
 
 // AggregateFunction names an aggregation that a datasource can declare
